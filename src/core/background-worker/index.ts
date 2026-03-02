@@ -221,13 +221,19 @@ export class BackgroundTaskWorker {
       const runningTasks = await system.backgroundTaskStore.listRunning();
       for (const task of runningTasks) {
         if (!task.resultSessionId) continue;
-        // If session is no longer active, mark as completed
-        if (!activeSessions.has(task.resultSessionId)) {
+        const sessionGone = !activeSessions.has(task.resultSessionId);
+        // Session exists but is idle (not streaming) and task has been running > 2 min
+        const sessionIdleAndDone = activeSessions.has(task.resultSessionId)
+          && !store.isSessionStreaming(task.resultSessionId)
+          && task.startedAt != null
+          && (Date.now() - new Date(task.startedAt).getTime()) > 2 * 60 * 1000;
+
+        if (sessionGone || sessionIdleAndDone) {
           await system.backgroundTaskStore.updateStatus(task.id, "COMPLETED", {
             completedAt: new Date(),
             resultSessionId: task.resultSessionId,
           });
-          console.log(`[BGWorker] Task ${task.id} completed (DB recovery, session ${task.resultSessionId}).`);
+          console.log(`[BGWorker] Task ${task.id} completed (DB recovery, session ${task.resultSessionId}, gone=${sessionGone}, idle=${sessionIdleAndDone}).`);
         }
       }
     } catch (err) {

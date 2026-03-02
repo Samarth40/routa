@@ -154,6 +154,11 @@ class HttpSessionStore {
     this.updateAccessTime(sessionId);
   }
 
+  /** Returns true while the session's prompt response is actively streaming. */
+  isSessionStreaming(sessionId: string): boolean {
+    return this.streamingSessionIds.has(sessionId);
+  }
+
   private updateAccessTime(sessionId: string): void {
     this.lastAccessTime.set(sessionId, Date.now());
   }
@@ -660,6 +665,19 @@ class HttpSessionStore {
         if (update.turnComplete?.usage) {
           inputTokens += update.turnComplete.usage.inputTokens ?? 0;
           outputTokens += update.turnComplete.usage.outputTokens ?? 0;
+        }
+
+        // Mark task COMPLETED when the agent's turn finishes
+        if (update.eventType === "turn_complete" || update.turnComplete) {
+          try {
+            await system.backgroundTaskStore.updateStatus(task.id, "COMPLETED", {
+              completedAt: new Date(),
+              resultSessionId: sessionId,
+            });
+            console.log(`[BGWorker] Task ${task.id} COMPLETED via turn_complete event.`);
+          } catch {
+            // best-effort
+          }
         }
       }
 

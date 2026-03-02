@@ -1142,12 +1142,25 @@ export function WorkspacePageClient() {
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-[12px] font-medium text-gray-600 dark:text-gray-400 mb-1">Agent</label>
-                        <input
-                          type="text"
-                          value={editForm.agentId}
-                          onChange={(e) => setEditForm((f) => ({ ...f, agentId: e.target.value }))}
-                          className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-[#252838] bg-gray-50 dark:bg-[#151720] text-[13px] text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-amber-500/30"
-                        />
+                        {specialists.length > 0 ? (
+                          <select
+                            value={editForm.agentId}
+                            onChange={(e) => setEditForm((f) => ({ ...f, agentId: e.target.value }))}
+                            className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-[#252838] bg-gray-50 dark:bg-[#151720] text-[13px] text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-amber-500/30"
+                          >
+                            <option value="">— Select agent —</option>
+                            {specialists.map((s) => (
+                              <option key={s.id} value={s.id}>{s.name}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            value={editForm.agentId}
+                            onChange={(e) => setEditForm((f) => ({ ...f, agentId: e.target.value }))}
+                            className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-[#252838] bg-gray-50 dark:bg-[#151720] text-[13px] text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-amber-500/30"
+                          />
+                        )}
                       </div>
                       <div>
                         <label className="block text-[12px] font-medium text-gray-600 dark:text-gray-400 mb-1">Priority</label>
