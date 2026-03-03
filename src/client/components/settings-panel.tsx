@@ -5,6 +5,7 @@ import { desktopAwareFetch } from "../utils/diagnostics";
 import type { SpecialistConfig, AgentRole, ModelTier } from "./specialist-manager";
 import { GitHubWebhookPanel } from "./github-webhook-panel";
 import { SchedulePanel } from "./schedule-panel";
+import { AgentInstallPanel } from "./agent-install-panel";
 
 /**
  * Agent roles that can have default providers configured.
@@ -187,9 +188,10 @@ interface SettingsPanelProps {
   open: boolean;
   onClose: () => void;
   providers: ProviderOption[];
+  initialTab?: SettingsTab;
 }
 
-type SettingsTab = "providers" | "specialists" | "models" | "memory" | "mcp" | "webhooks" | "schedules";
+type SettingsTab = "providers" | "specialists" | "models" | "memory" | "mcp" | "webhooks" | "schedules" | "agents";
 
 // ─── Shared style helpers ──────────────────────────────────────────────────
 const inputCls =
@@ -1267,7 +1269,7 @@ function McpServersTab() {
 }
 
 // ─── Main Settings Panel ───────────────────────────────────────────────────
-export function SettingsPanel({ open, onClose, providers }: SettingsPanelProps) {
+export function SettingsPanel({ open, onClose, providers, initialTab }: SettingsPanelProps) {
   const [settings, setSettings] = useState<DefaultProviderSettings>({});
   const [modelDefs, setModelDefs] = useState<ModelDefinition[]>([]);
   const [activeTab, setActiveTab] = useState<SettingsTab>("providers");
@@ -1277,8 +1279,9 @@ export function SettingsPanel({ open, onClose, providers }: SettingsPanelProps) 
     if (open) {
       setSettings(loadDefaultProviders());
       setModelDefs(loadModelDefinitions());
+      if (initialTab) setActiveTab(initialTab);
     }
-  }, [open]);
+  }, [open, initialTab]);
 
   // Re-sync model defs when Models tab is visited
   useEffect(() => {
@@ -1304,6 +1307,7 @@ export function SettingsPanel({ open, onClose, providers }: SettingsPanelProps) 
   const availableProviders = providers.filter((p) => p.status === "available");
 
   const TAB_DEFS: { key: SettingsTab; label: string }[] = [
+    { key: "agents", label: "Agents" },
     { key: "providers", label: "Providers" },
     { key: "specialists", label: "Specialists" },
     { key: "models", label: "Models" },
@@ -1391,6 +1395,11 @@ export function SettingsPanel({ open, onClose, providers }: SettingsPanelProps) 
                 <button onClick={() => setActiveTab("models")} className="text-blue-500 hover:underline">Models tab</button>
                 {" "}to use custom connection details.
               </p>
+            </div>
+          )}
+          {activeTab === "agents" && (
+            <div className="h-full overflow-y-auto">
+              <AgentInstallPanel />
             </div>
           )}
           {activeTab === "specialists" && <SpecialistsTab modelDefs={modelDefs} />}

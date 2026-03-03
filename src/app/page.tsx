@@ -11,13 +11,12 @@
  * - Recent sessions as compact inline pills
  */
 
-import { useCallback, useState, useEffect } from "react";
+import { useCallback, useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { HomeInput } from "@/client/components/home-input";
 import { useWorkspaces } from "@/client/hooks/use-workspaces";
 import { useAcp } from "@/client/hooks/use-acp";
 import { useSkills } from "@/client/hooks/use-skills";
-import { AgentInstallPanel } from "@/client/components/agent-install-panel";
 import { SettingsPanel } from "@/client/components/settings-panel";
 import { NotificationProvider, NotificationBell } from "@/client/components/notification-center";
 
@@ -29,8 +28,36 @@ export default function HomePage() {
 
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [showAgentInstall, setShowAgentInstall] = useState(false);
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<"agents" | undefined>(undefined);
+  const [showIntegrationsMenu, setShowIntegrationsMenu] = useState(false);
+  const [showWorkspacesMenu, setShowWorkspacesMenu] = useState(false);
+  const integrationsRef = useRef<HTMLDivElement>(null);
+  const workspacesMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close integrations dropdown on outside click
+  useEffect(() => {
+    if (!showIntegrationsMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (integrationsRef.current && !integrationsRef.current.contains(e.target as Node)) {
+        setShowIntegrationsMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showIntegrationsMenu]);
+
+  // Close workspaces menu on outside click
+  useEffect(() => {
+    if (!showWorkspacesMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (workspacesMenuRef.current && !workspacesMenuRef.current.contains(e.target as Node)) {
+        setShowWorkspacesMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showWorkspacesMenu]);
 
   // Auto-select first workspace on load
   useEffect(() => {
@@ -79,24 +106,39 @@ export default function HomePage() {
         <div className="flex-1" />
 
         <nav className="flex items-center gap-0.5">
-          <button
-            onClick={() => setShowAgentInstall(true)}
-            className="px-2.5 py-1 rounded-md text-[11px] font-medium text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-[#151720] transition-colors"
-          >
-            Agents
-          </button>
-          <a
-            href="/mcp-tools"
-            className="px-2.5 py-1 rounded-md text-[11px] font-medium text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-[#151720] transition-colors"
-          >
-            MCP
-          </a>
-          <a
-            href="/traces"
-            className="px-2.5 py-1 rounded-md text-[11px] font-medium text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-[#151720] transition-colors"
-          >
-            Traces
-          </a>
+          {/* Integrations dropdown — merges MCP + A2A */}
+          <div className="relative" ref={integrationsRef}>
+            <button
+              onClick={() => setShowIntegrationsMenu((v) => !v)}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${showIntegrationsMenu ? "text-gray-800 dark:text-gray-200 bg-gray-100 dark:bg-[#151720]" : "text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-[#151720]"}`}
+            >
+              Integrations
+              <svg className="w-2.5 h-2.5 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {showIntegrationsMenu && (
+              <div className="absolute right-0 top-full mt-1 w-44 bg-white dark:bg-[#12141c] border border-gray-100 dark:border-[#1c1f2e] rounded-lg shadow-lg z-50 py-1 overflow-hidden">
+                <a
+                  href="/mcp-tools"
+                  onClick={() => setShowIntegrationsMenu(false)}
+                  className="flex items-center gap-2.5 px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#1a1d2c] transition-colors"
+                >
+                  <span className="w-4 h-4 rounded bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center text-[9px] font-bold text-blue-600 dark:text-blue-400">M</span>
+                  MCP Tools
+                </a>
+                <a
+                  href="/a2a"
+                  onClick={() => setShowIntegrationsMenu(false)}
+                  className="flex items-center gap-2.5 px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#1a1d2c] transition-colors"
+                >
+                  <span className="w-4 h-4 rounded bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center text-[9px] font-bold text-emerald-600 dark:text-emerald-400">A</span>
+                  A2A Protocol
+                </a>
+              </div>
+            )}
+          </div>
+
           <a
             href="/settings/webhooks"
             className="px-2.5 py-1 rounded-md text-[11px] font-medium text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-[#151720] transition-colors"
@@ -109,16 +151,14 @@ export default function HomePage() {
           >
             Schedules
           </a>
-          <a
-            href="/messages"
-            className="px-2.5 py-1 rounded-md text-[11px] font-medium text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-[#151720] transition-colors"
-          >
-            Messages
-          </a>
+
           <NotificationBell />
+
+          {/* Settings — with Agents accessible via initialTab */}
           <button
-            onClick={() => setShowSettingsPanel(true)}
+            onClick={() => { setSettingsInitialTab(undefined); setShowSettingsPanel(true); }}
             className="p-1.5 rounded-md text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#151720] transition-colors"
+            title="Settings"
           >
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.241-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.991l1.004.827c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 010-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
@@ -126,24 +166,24 @@ export default function HomePage() {
             </svg>
           </button>
 
-          {/* Protocol status indicators */}
-          <div className="ml-2 flex items-center gap-3 pl-3 border-l border-gray-200 dark:border-[#1f2233]">
-            <StatusDot label="MCP" />
-            <StatusDot label="ACP" />
+          {/* Single combined status indicator */}
+          <div className="ml-2 pl-3 border-l border-gray-200 dark:border-[#1f2233]">
+            <ConnectionDot connected={acp.connected} />
           </div>
         </nav>
       </header>
 
-      {/* ─── Main Content ───────────────────────────────────────────── */}
+      {/* ─── Main Content ─────────────────────────────────────────── */}
       <main className="flex-1 overflow-y-auto">
-        <div className="min-h-full flex flex-col">
-          {/* Input Section — vertically centered, dominant */}
-          <div className="flex-1 flex items-center justify-center px-6 pt-4 pb-6 min-h-[260px]">
-            {!workspacesHook.loading && workspacesHook.workspaces.length === 0 ? (
-              <OnboardingCard onCreateWorkspace={handleWorkspaceCreate} />
-            ) : (
-              <div className="w-full flex flex-col items-center">
-                <RoutaHeroLogo />
+        {!workspacesHook.loading && workspacesHook.workspaces.length === 0 ? (
+          <div className="h-full flex items-center justify-center">
+            <OnboardingCard onCreateWorkspace={handleWorkspaceCreate} />
+          </div>
+        ) : (
+          <div className="min-h-full flex flex-col justify-center px-6 py-8">
+            {/* ── Input — centered ──────────────────────────────────── */}
+            <div className="flex justify-center mb-8">
+              <div className="w-full max-w-2xl">
                 <HomeInput
                   workspaceId={activeWorkspaceId ?? undefined}
                   onWorkspaceChange={(wsId) => {
@@ -156,182 +196,44 @@ export default function HomePage() {
                   displaySkills={skillsHook.allSkills}
                 />
               </div>
-            )}
+            </div>
+
+            {/* ── Workspace Cards — below input ─────────────────────── */}
+            <div className="max-w-4xl mx-auto">
+              <WorkspaceCards
+                workspaceId={activeWorkspaceId}
+                refreshKey={refreshKey}
+                onWorkspaceSelect={handleWorkspaceSelect}
+                onWorkspaceCreate={handleWorkspaceCreate}
+                onSessionClick={handleSessionClick}
+                showWorkspacesMenu={showWorkspacesMenu}
+                setShowWorkspacesMenu={setShowWorkspacesMenu}
+                workspacesMenuRef={workspacesMenuRef}
+              />
+            </div>
           </div>
-
-          {/* Recent Sessions */}
-          {workspacesHook.workspaces.length > 0 && (
-            <RecentSessions
-              workspaceId={activeWorkspaceId}
-              refreshKey={refreshKey}
-              onSessionClick={handleSessionClick}
-            />
-          )}
-        </div>
+        )}
       </main>
-
-      {/* ─── Agent Install Modal ────────────────────────────────────── */}
-      {showAgentInstall && (
-        <OverlayModal onClose={() => setShowAgentInstall(false)} title="Install Agents">
-          <AgentInstallPanel />
-        </OverlayModal>
-      )}
 
       {/* ─── Settings Panel ────────────────────────────────────────── */}
       <SettingsPanel
         open={showSettingsPanel}
         onClose={() => setShowSettingsPanel(false)}
         providers={acp.providers}
+        initialTab={settingsInitialTab}
       />
     </div>
     </NotificationProvider>
   );
 }
 
-// ─── Routa Hero Logo with Agent Flow Animation ────────────────────────
+// ─── Connection Dot (single indicator, replaces MCP+ACP dots) ────────
 
-function RoutaHeroLogo() {
+function ConnectionDot({ connected }: { connected: boolean }) {
   return (
-    <div className="mb-10 flex flex-col items-center gap-6 select-none">
-      {/* Animated agent-flow diagram */}
-      <div className="relative w-[360px] h-[130px]">
-        {/* Glow effect behind the diagram */}
-        <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 via-amber-500/10 to-emerald-500/10 blur-3xl opacity-60 animate-pulse" />
-        
-        <svg
-          viewBox="0 0 360 130"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-          className="w-full h-full relative z-10"
-        >
-          <defs>
-            <linearGradient id="hero-blue" x1="0" y1="0" x2="60" y2="60" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#60A5FA" />
-              <stop offset="100%" stopColor="#3B82F6" />
-            </linearGradient>
-            <linearGradient id="hero-orange" x1="0" y1="0" x2="30" y2="30" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#FCD34D" />
-              <stop offset="100%" stopColor="#F59E0B" />
-            </linearGradient>
-            <linearGradient id="hero-green" x1="0" y1="0" x2="50" y2="50" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#34D399" />
-              <stop offset="100%" stopColor="#10B981" />
-            </linearGradient>
-            
-            {/* Glow filters */}
-            <filter id="glow-blue">
-              <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
-              <feMerge>
-                <feMergeNode in="coloredBlur"/>
-                <feMergeNode in="SourceGraphic"/>
-              </feMerge>
-            </filter>
-            <filter id="glow-orange">
-              <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
-              <feMerge>
-                <feMergeNode in="coloredBlur"/>
-                <feMergeNode in="SourceGraphic"/>
-              </feMerge>
-            </filter>
-            <filter id="glow-green">
-              <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
-              <feMerge>
-                <feMergeNode in="coloredBlur"/>
-                <feMergeNode in="SourceGraphic"/>
-              </feMerge>
-            </filter>
-          </defs>
-
-          {/* Routes: Routa → Tasks */}
-          <path d="M 72 65 C 108 65, 126 29, 162 29" stroke="#94A3B8" strokeWidth="2.5" strokeLinecap="round" fill="none" opacity="0.2" className="dark:opacity-30" />
-          <path d="M 72 65 L 162 65" stroke="#94A3B8" strokeWidth="2.5" strokeLinecap="round" fill="none" opacity="0.2" className="dark:opacity-30" />
-          <path d="M 72 65 C 108 65, 126 101, 162 101" stroke="#94A3B8" strokeWidth="2.5" strokeLinecap="round" fill="none" opacity="0.2" className="dark:opacity-30" />
-
-          {/* Routes: Tasks → Gate */}
-          <path d="M 162 29 C 198 29, 234 65, 288 65" stroke="#94A3B8" strokeWidth="2.5" strokeLinecap="round" fill="none" opacity="0.2" className="dark:opacity-30" />
-          <path d="M 162 65 L 288 65" stroke="#94A3B8" strokeWidth="2.5" strokeLinecap="round" fill="none" opacity="0.2" className="dark:opacity-30" />
-          <path d="M 162 101 C 198 101, 234 65, 288 65" stroke="#94A3B8" strokeWidth="2.5" strokeLinecap="round" fill="none" opacity="0.2" className="dark:opacity-30" />
-
-          {/* Flowing dots on top route */}
-          <circle r="3.5" fill="#60A5FA" opacity="0.95" filter="url(#glow-blue)">
-            <animateMotion dur="2.4s" repeatCount="indefinite" path="M 72 65 C 108 65, 126 29, 162 29" />
-            <animate attributeName="opacity" values="0;0.95;0.95;0" dur="2.4s" repeatCount="indefinite" />
-          </circle>
-          <circle r="3.5" fill="#F59E0B" opacity="0.95" filter="url(#glow-orange)">
-            <animateMotion dur="2.4s" repeatCount="indefinite" path="M 162 29 C 198 29, 234 65, 288 65" begin="1.2s" />
-            <animate attributeName="opacity" values="0;0.95;0.95;0" dur="2.4s" repeatCount="indefinite" begin="1.2s" />
-          </circle>
-
-          {/* Flowing dots on middle route */}
-          <circle r="3.5" fill="#60A5FA" opacity="0.95" filter="url(#glow-blue)">
-            <animateMotion dur="2s" repeatCount="indefinite" path="M 72 65 L 162 65" />
-            <animate attributeName="opacity" values="0;0.95;0.95;0" dur="2s" repeatCount="indefinite" />
-          </circle>
-          <circle r="3.5" fill="#F59E0B" opacity="0.95" filter="url(#glow-orange)">
-            <animateMotion dur="2s" repeatCount="indefinite" path="M 162 65 L 288 65" begin="1s" />
-            <animate attributeName="opacity" values="0;0.95;0.95;0" dur="2s" repeatCount="indefinite" begin="1s" />
-          </circle>
-
-          {/* Flowing dots on bottom route */}
-          <circle r="3.5" fill="#60A5FA" opacity="0.95" filter="url(#glow-blue)">
-            <animateMotion dur="2.8s" repeatCount="indefinite" path="M 72 65 C 108 65, 126 101, 162 101" begin="0.4s" />
-            <animate attributeName="opacity" values="0;0.95;0.95;0" dur="2.8s" repeatCount="indefinite" begin="0.4s" />
-          </circle>
-          <circle r="3.5" fill="#10B981" opacity="0.95" filter="url(#glow-green)">
-            <animateMotion dur="2.8s" repeatCount="indefinite" path="M 162 101 C 198 101, 234 65, 288 65" begin="1.8s" />
-            <animate attributeName="opacity" values="0;0.95;0.95;0" dur="2.8s" repeatCount="indefinite" begin="1.8s" />
-          </circle>
-
-          {/* Routa node (blue) — coordinator */}
-          <circle cx="72" cy="65" r="25" fill="url(#hero-blue)" filter="url(#glow-blue)">
-            <animate attributeName="r" values="25;27;25" dur="3s" repeatCount="indefinite" />
-          </circle>
-          <circle cx="72" cy="65" r="12.5" fill="#0f172a" className="dark:fill-[#0a0c12]" />
-          <circle cx="72" cy="65" r="8" fill="#60A5FA" opacity="0.4">
-            <animate attributeName="opacity" values="0.2;0.6;0.2" dur="3s" repeatCount="indefinite" />
-          </circle>
-
-          {/* Task nodes (orange) */}
-          <circle cx="162" cy="29" r="12" fill="url(#hero-orange)" filter="url(#glow-orange)" />
-          <circle cx="162" cy="29" r="6" fill="#0f172a" className="dark:fill-[#0a0c12]" />
-
-          <circle cx="162" cy="65" r="12" fill="url(#hero-orange)" filter="url(#glow-orange)" />
-          <circle cx="162" cy="65" r="6" fill="#0f172a" className="dark:fill-[#0a0c12]" />
-
-          <circle cx="162" cy="101" r="12" fill="url(#hero-orange)" filter="url(#glow-orange)" />
-          <circle cx="162" cy="101" r="6" fill="#0f172a" className="dark:fill-[#0a0c12]" />
-
-          {/* Gate node (green) — verification */}
-          <circle cx="288" cy="65" r="20" fill="url(#hero-green)" filter="url(#glow-green)">
-            <animate attributeName="r" values="20;22;20" dur="3s" repeatCount="indefinite" begin="1.5s" />
-          </circle>
-          <circle cx="288" cy="65" r="10" fill="#0f172a" className="dark:fill-[#0a0c12]" />
-          <circle cx="288" cy="65" r="6.5" fill="#10B981" opacity="0.45">
-            <animate attributeName="opacity" values="0.25;0.65;0.25" dur="3s" repeatCount="indefinite" begin="1.5s" />
-          </circle>
-        </svg>
-      </div>
-
-      {/* Brand text with gradient */}
-      <div className="flex flex-col items-center gap-1.5">
-        <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 dark:from-gray-100 dark:via-white dark:to-gray-100 bg-clip-text text-transparent">
-          Routa
-        </h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">
-          Multi-Agent Orchestration Platform
-        </p>
-      </div>
-    </div>
-  );
-}
-
-// ─── Status Dot ────────────────────────────────────────────────────────
-
-function StatusDot({ label }: { label: string }) {
-  return (
-    <div className="flex items-center gap-1.5" title={`${label} connected`}>
-      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 ring-2 ring-emerald-500/20" />
-      <span className="text-[10px] font-mono text-gray-400 dark:text-gray-500">{label}</span>
+    <div className="flex items-center gap-1.5" title={connected ? "Connected" : "Disconnected"}>
+      <span className={`w-1.5 h-1.5 rounded-full ring-2 transition-colors ${connected ? "bg-emerald-500 ring-emerald-500/20" : "bg-amber-400 ring-amber-400/20"}`} />
+      <span className="text-[10px] font-mono text-gray-400 dark:text-gray-500">{connected ? "Connected" : "Offline"}</span>
     </div>
   );
 }
@@ -363,7 +265,7 @@ function OnboardingCard({ onCreateWorkspace }: { onCreateWorkspace: (title: stri
   );
 }
 
-// ─── Recent Sessions ──────────────────────────────────────────────────
+// ─── WorkspaceCards — left panel ─────────────────────────────────────
 
 interface SessionInfo {
   sessionId: string;
@@ -375,44 +277,49 @@ interface SessionInfo {
   createdAt: string;
 }
 
-function RecentSessions({
+interface WorkspaceCardSession {
+  sessionId: string;
+  displayName: string;
+  createdAt: string;
+}
+
+interface WorkspaceCardData {
+  id: string;
+  title: string;
+  updatedAt: string;
+  recentSessions: WorkspaceCardSession[] | [];
+}
+
+function WorkspaceCards({
   workspaceId,
   refreshKey,
+  onWorkspaceSelect,
+  onWorkspaceCreate,
   onSessionClick,
+  showWorkspacesMenu,
+  setShowWorkspacesMenu,
+  workspacesMenuRef,
 }: {
   workspaceId: string | null;
   refreshKey: number;
+  onWorkspaceSelect: (id: string) => void;
+  onWorkspaceCreate: (title: string) => void;
   onSessionClick: (id: string) => void;
+  showWorkspacesMenu: boolean;
+  setShowWorkspacesMenu: (v: boolean) => void;
+  workspacesMenuRef: React.RefObject<HTMLDivElement | null>;
 }) {
-  const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const workspacesHook = useWorkspaces();
-
-  useEffect(() => {
-    const fetchSessions = async () => {
-      try {
-        const url = workspaceId
-          ? `/api/sessions?workspaceId=${encodeURIComponent(workspaceId)}&limit=8`
-          : "/api/sessions?limit=8";
-        const res = await fetch(url, { cache: "no-store" });
-        const data = await res.json();
-        setSessions(Array.isArray(data?.sessions) ? data.sessions.slice(0, 8) : []);
-      } catch {
-        /* ignore */
-      }
-    };
-    fetchSessions();
-  }, [workspaceId, refreshKey]);
-
-  if (sessions.length === 0 && workspacesHook.workspaces.length === 0) return null;
+  const [cardData, setCardData] = useState<WorkspaceCardData[]>([]);
 
   const formatTime = (dateStr: string) => {
     const diffMs = Date.now() - new Date(dateStr).getTime();
     const mins = Math.floor(diffMs / 60000);
     if (mins < 1) return "now";
-    if (mins < 60) return `${mins}m`;
+    if (mins < 60) return `${mins}m ago`;
     const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs}h`;
-    return `${Math.floor(hrs / 24)}d`;
+    if (hrs < 24) return `${hrs}h ago`;
+    return `${Math.floor(hrs / 24)}d ago`;
   };
 
   const getDisplayName = (s: SessionInfo) => {
@@ -422,130 +329,177 @@ function RecentSessions({
     return `Session ${s.sessionId.slice(0, 6)}`;
   };
 
-  return (
-    <div className="px-6 pb-6">
-      <div className="max-w-2xl mx-auto space-y-4">
-        {/* Workspaces Section */}
-        {workspacesHook.workspaces.length > 0 && (
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <h3 className="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
-                Workspaces
-              </h3>
-              <div className="flex-1 h-px bg-gray-100 dark:bg-[#171a24]" />
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {workspacesHook.workspaces.slice(0, 6).map((ws) => (
-                <a
-                  key={ws.id}
-                  href={`/workspace/${ws.id}`}
-                  className="group flex items-center gap-2 px-3 py-2 rounded-lg bg-white dark:bg-[#12141c] border border-gray-100 dark:border-[#1c1f2e] hover:border-amber-300 dark:hover:border-amber-700/50 transition-all hover:shadow-sm"
-                >
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 group-hover:bg-amber-500 transition-colors" />
-                  <span className="text-xs text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-gray-100 transition-colors max-w-[160px] truncate">
-                    {ws.title}
-                  </span>
-                  <span className="text-[10px] text-gray-300 dark:text-gray-600 font-mono">
-                    {formatTime(ws.updatedAt)}
-                  </span>
-                </a>
-              ))}
-            </div>
-          </div>
-        )}
+  useEffect(() => {
+    const fetchAll = async () => {
+      const workspaces = workspacesHook.workspaces;
+      if (workspaces.length === 0) return;
 
-        {/* Recent Sessions Section */}
-        {sessions.length > 0 && (
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <h3 className="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
-                Recent Sessions
-              </h3>
-              <div className="flex-1 h-px bg-gray-100 dark:bg-[#171a24]" />
-              <a
-                href="/sessions"
-                className="text-[11px] text-amber-600 dark:text-amber-500 hover:text-amber-700 dark:hover:text-amber-400 transition-colors"
-              >
-                View all →
-              </a>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {sessions.map((s) => (
-                <button
-                  key={s.sessionId}
-                  onClick={() => onSessionClick(s.sessionId)}
-                  className="group flex items-center gap-2 px-3 py-2 rounded-lg bg-white dark:bg-[#12141c] border border-gray-100 dark:border-[#1c1f2e] hover:border-amber-300 dark:hover:border-amber-700/50 transition-all hover:shadow-sm"
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 dark:bg-blue-500 group-hover:bg-amber-500 transition-colors" />
-                  <span className="text-xs text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-gray-100 transition-colors max-w-[160px] truncate">
-                    {getDisplayName(s)}
-                  </span>
-                  <span className="text-[10px] text-gray-300 dark:text-gray-600 font-mono">
-                    {formatTime(s.createdAt)}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+      const cards: WorkspaceCardData[] = await Promise.all(
+        workspaces.slice(0, 9).map(async (ws) => {
+          try {
+            const res = await fetch(
+              `/api/sessions?workspaceId=${encodeURIComponent(ws.id)}&limit=3`,
+              { cache: "no-store" }
+            );
+            const data = await res.json();
+            const sessions: SessionInfo[] = Array.isArray(data?.sessions) ? data.sessions : [];
+            const recentSessions: WorkspaceCardSession[] = sessions.slice(0, 3).map(s => ({
+              sessionId: s.sessionId,
+              displayName: getDisplayName(s),
+              createdAt: s.createdAt,
+            }));
+            return {
+              id: ws.id,
+              title: ws.title,
+              updatedAt: ws.updatedAt,
+              recentSessions,
+            };
+          } catch {
+            return { id: ws.id, title: ws.title, updatedAt: ws.updatedAt, recentSessions: [] };
+          }
+        })
+      );
+
+      // Sort by most recent session activity
+      cards.sort((a, b) => {
+        const aDate = a.recentSessions[0]?.createdAt ?? a.updatedAt;
+        const bDate = b.recentSessions[0]?.createdAt ?? b.updatedAt;
+        return new Date(bDate).getTime() - new Date(aDate).getTime();
+      });
+
+      setCardData(cards);
+    };
+    fetchAll();
+  }, [workspacesHook.workspaces, refreshKey]);
+
+  if (workspacesHook.loading) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <span className="text-sm text-gray-400 dark:text-gray-500">Loading…</span>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
-// ─── Overlay Modal ────────────────────────────────────────────────────
-
-function OverlayModal({
-  onClose,
-  title,
-  children,
-}: {
-  onClose: () => void;
-  title: string;
-  children: React.ReactNode;
-}) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      role="dialog"
-      aria-modal="true"
-    >
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={onClose}
-        aria-hidden="true"
-      />
-      <div
-        className="relative w-full max-w-5xl h-[80vh] bg-white dark:bg-[#12141c] border border-gray-200 dark:border-[#1c1f2e] rounded-xl shadow-2xl overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="h-11 px-4 border-b border-gray-100 dark:border-[#1c1f2e] flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-              {title}
-            </span>
-            <a
-              href="/settings/agents"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[11px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-            >
-              Open in new tab
-            </a>
-          </div>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+          Recent Workspaces
+        </h2>
+        <div className="relative" ref={workspacesMenuRef}>
           <button
-            type="button"
-            onClick={onClose}
-            className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-gray-100 dark:hover:bg-[#1c1f2e] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-            title="Close (Esc)"
-            aria-label="Close"
+            onClick={() => setShowWorkspacesMenu(!showWorkspacesMenu)}
+            className="text-[11px] text-amber-600 dark:text-amber-500 hover:text-amber-700 dark:hover:text-amber-400 transition-colors flex items-center gap-1"
           >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            View all
+            <svg className={`w-2.5 h-2.5 transition-transform ${showWorkspacesMenu ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
             </svg>
           </button>
+          {showWorkspacesMenu && (
+            <div className="absolute right-0 top-full mt-1 w-40 bg-white dark:bg-[#12141c] border border-gray-100 dark:border-[#1c1f2e] rounded-lg shadow-lg z-50 py-1 overflow-hidden">
+              <a
+                href="/workspaces"
+                onClick={() => setShowWorkspacesMenu(false)}
+                className="flex items-center gap-2 px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#1a1d2c] transition-colors"
+              >
+                <svg className="w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 00-1.883 2.542l.857 6a2.25 2.25 0 002.227 1.932H19.05a2.25 2.25 0 002.227-1.932l.857-6a2.25 2.25 0 00-1.883-2.542m-16.5 0V6A2.25 2.25 0 016 3.75h3.879a1.5 1.5 0 011.06.44l2.122 2.12a1.5 1.5 0 001.06.44H18A2.25 2.25 0 0120.25 9v.776" />
+                </svg>
+                All Workspaces
+              </a>
+              <a
+                href="/sessions"
+                onClick={() => setShowWorkspacesMenu(false)}
+                className="flex items-center gap-2 px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#1a1d2c] transition-colors"
+              >
+                <svg className="w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-3 3v-3z" />
+                </svg>
+                All Sessions
+              </a>
+            </div>
+          )}
         </div>
-        <div className="h-[calc(80vh-44px)]">{children}</div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {cardData.map((ws) => {
+          const isActive = ws.id === workspaceId;
+          return (
+            <button
+              key={ws.id}
+              onClick={() => onWorkspaceSelect(ws.id)}
+              className={`group text-left rounded-xl border p-4 transition-all hover:shadow-sm ${
+                isActive
+                  ? "bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-700/50"
+                  : "bg-white dark:bg-[#12141c] border-gray-100 dark:border-[#1c1f2e] hover:border-amber-200 dark:hover:border-amber-700/40"
+              }`}
+            >
+              {/* Workspace header */}
+              <div className="flex items-start justify-between gap-2 mb-2.5">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className={`w-2 h-2 rounded-full shrink-0 transition-colors ${isActive ? "bg-amber-500" : "bg-emerald-500 group-hover:bg-amber-400"}`} />
+                  <span className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate leading-tight">
+                    {ws.title}
+                  </span>
+                </div>
+                <a
+                  href={`/workspace/${ws.id}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                  title="Open workspace"
+                >
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                  </svg>
+                </a>
+              </div>
+
+              {/* Recent sessions */}
+              {ws.recentSessions.length > 0 ? (
+                <div className="space-y-1">
+                  {ws.recentSessions.map((session, idx) => (
+                    <div
+                      key={session.sessionId}
+                      className="flex items-center gap-1.5 cursor-pointer group/session"
+                      onClick={(e) => { e.stopPropagation(); onSessionClick(session.sessionId); }}
+                    >
+                      <svg className="w-3 h-3 shrink-0 text-blue-400 dark:text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-3 3v-3z" />
+                      </svg>
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400 truncate flex-1 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">
+                        {session.displayName}
+                      </span>
+                      <span className="text-[9px] text-gray-300 dark:text-gray-600 font-mono shrink-0">
+                        {formatTime(session.createdAt)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <span className="text-[10px] text-gray-300 dark:text-gray-600 italic">No sessions yet</span>
+              )}
+            </button>
+          );
+        })}
+
+        {/* New workspace card */}
+        <button
+          onClick={() => onWorkspaceCreate("New Workspace")}
+          className="text-left rounded-xl border border-dashed border-gray-200 dark:border-[#1c1f2e] p-4 transition-all hover:border-amber-300 dark:hover:border-amber-700/50 hover:bg-amber-50/50 dark:hover:bg-amber-900/5 group"
+        >
+          <div className="flex items-center gap-2">
+            <span className="w-5 h-5 rounded-md bg-gray-100 dark:bg-[#1a1d2c] flex items-center justify-center group-hover:bg-amber-100 dark:group-hover:bg-amber-900/30 transition-colors">
+              <svg className="w-3 h-3 text-gray-400 dark:text-gray-500 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+            </span>
+            <span className="text-xs text-gray-400 dark:text-gray-500 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+              New workspace
+            </span>
+          </div>
+        </button>
       </div>
     </div>
   );

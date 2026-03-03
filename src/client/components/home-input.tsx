@@ -455,68 +455,53 @@ export function HomeInput({
       </div>
 
       {/* ─── Mode Tips ──────────────────────────────────────────────── */}
-      <div className="mt-2 px-1 min-h-[44px]">
+      <div className="mt-1.5 px-1 min-h-[20px]">
         {selectedSpecialistId ? (
           (() => {
             const spec = specialists.find((s) => s.id === selectedSpecialistId);
             return (
-              <div className="flex items-start gap-2 text-[11px] text-gray-400 dark:text-gray-500 animate-fade-in-up">
-                <span className="mt-0.5 shrink-0 w-3.5 h-3.5 rounded-full bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center">
-                  <svg className="w-2 h-2 text-violet-500" fill="currentColor" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3" /></svg>
+              <div className="flex items-center gap-1.5 text-[10px] text-gray-400 dark:text-gray-500">
+                <span className="w-2 h-2 rounded-full bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center">
+                  <svg className="w-1 h-1 text-violet-500" fill="currentColor" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3" /></svg>
                 </span>
-                <div className="flex flex-wrap gap-x-3 gap-y-0.5 leading-relaxed">
-                  <span className="text-violet-600 dark:text-violet-400 font-medium">{spec?.name}</span>
-                  {spec?.role && <><span className="text-gray-300 dark:text-gray-700">·</span><span className="font-mono text-[10px]">{spec.role}</span></>}
-                  {spec?.description && <><span className="text-gray-300 dark:text-gray-700">·</span><span className="italic opacity-70">{spec.description}</span></>}
-                </div>
+                <span className="text-violet-600 dark:text-violet-400 font-medium">{spec?.name}</span>
+                {spec?.role && <><span className="text-gray-300 dark:text-gray-700">·</span><span className="font-mono text-[9px]">{spec.role}</span></>}
               </div>
             );
           })()
         ) : selectedRole === "ROUTA" ? (
-          <div className="flex items-start gap-2 text-[11px] text-gray-400 dark:text-gray-500 animate-fade-in-up">
-            <span className="mt-0.5 shrink-0 w-3.5 h-3.5 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
-              <svg className="w-2 h-2 text-amber-500" fill="currentColor" viewBox="0 0 8 8">
+          <div className="flex items-center gap-1.5 text-[10px] text-gray-400 dark:text-gray-500">
+            <span className="w-2 h-2 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+              <svg className="w-1 h-1 text-amber-500" fill="currentColor" viewBox="0 0 8 8">
                 <circle cx="4" cy="4" r="3" />
               </svg>
             </span>
-            <div className="flex flex-wrap gap-x-3 gap-y-0.5 leading-relaxed">
-              <span className="text-gray-500 dark:text-gray-400">适合复杂任务</span>
-              <span className="text-gray-300 dark:text-gray-700">·</span>
-              <span>自动拆解需求并分配给多个专属 Agent</span>
-              <span className="text-gray-300 dark:text-gray-700">·</span>
-              <span className="italic opacity-70">e.g. "实现一个完整的登录模块"</span>
-            </div>
+            <span>适合复杂任务 · 自动拆解需求并分配给多个专属 Agent</span>
           </div>
         ) : (
-          <div className="flex items-start gap-2 text-[11px] text-gray-400 dark:text-gray-500 animate-fade-in-up">
-            <span className="mt-0.5 shrink-0 w-3.5 h-3.5 rounded-full bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center">
-              <svg className="w-2 h-2 text-violet-500" fill="currentColor" viewBox="0 0 8 8">
+          <div className="flex items-center gap-1.5 text-[10px] text-gray-400 dark:text-gray-500">
+            <span className="w-2 h-2 rounded-full bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center">
+              <svg className="w-1 h-1 text-violet-500" fill="currentColor" viewBox="0 0 8 8">
                 <circle cx="4" cy="4" r="3" />
               </svg>
             </span>
-            <div className="flex flex-wrap gap-x-3 gap-y-0.5 leading-relaxed">
-              <span className="text-gray-500 dark:text-gray-400">适合简单快速任务</span>
-              <span className="text-gray-300 dark:text-gray-700">·</span>
-              <span>单 Agent 直接执行，无编排开销</span>
-              <span className="text-gray-300 dark:text-gray-700">·</span>
-              <span className="italic opacity-70">e.g. "修复这个 bug" / "解释这段代码"</span>
-            </div>
+            <span>适合简单快速任务 · 单 Agent 直接执行</span>
           </div>
         )}
       </div>
 
-      {/* ─── Skills — compact cards with name + description ── */}
+      {/* ─── Skills — horizontal scroll row ─────────────────────── */}
       {displaySkills && displaySkills.length > 0 && (
-        <div className="mt-2.5 px-0.5">
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-            {displaySkills.slice(0, 9).map((skill) => (
+        <div className="mt-2 -mx-0.5">
+          <div className="flex gap-1.5 overflow-x-auto pb-0 scrollbar-none" style={{ scrollbarWidth: "none" }}>
+            {displaySkills.map((skill) => (
               <button
                 key={skill.name}
                 type="button"
                 onClick={() => setPendingSkill(skill.name)}
-                className="group flex flex-col gap-0.5 px-2.5 py-2 rounded-lg text-left bg-gray-50 dark:bg-[#12141c] border border-gray-100 dark:border-[#1c1f2e] hover:border-amber-300/60 dark:hover:border-amber-700/40 hover:bg-white dark:hover:bg-[#151720] transition-all"
+                className="group shrink-0 flex flex-col gap-0.5 px-2.5 py-2 rounded-lg text-left bg-gray-50 dark:bg-[#12141c] border border-gray-100 dark:border-[#1c1f2e] hover:border-amber-300/60 dark:hover:border-amber-700/40 hover:bg-white dark:hover:bg-[#151720] transition-all w-[140px]"
               >
-                <span className="text-[11px] font-mono font-medium text-gray-500 dark:text-gray-400 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+                <span className="text-[11px] font-mono font-medium text-gray-500 dark:text-gray-400 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors truncate">
                   /{skill.name}
                 </span>
                 {skill.description && (
