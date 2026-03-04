@@ -9,6 +9,10 @@
 
 Both backends implement **identical REST APIs** for seamless frontend compatibility.
 
+## Documentation
+
+- Unless I ask to write docs, you don't need to write docs for your work.
+
 ## Testing
 
 - Use playwright tool (mcp) to test the web UI by youself if possible
