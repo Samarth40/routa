@@ -77,7 +77,8 @@ function useRealParams() {
     // Start with placeholder values, will be resolved in useEffect
     workspaceId: params.workspaceId as string,
     sessionId: params.sessionId as string,
-    isResolved: false,
+    // If not placeholder, consider it resolved immediately
+    isResolved: !isPlaceholder,
   });
 
   // Resolve params on mount and when URL changes

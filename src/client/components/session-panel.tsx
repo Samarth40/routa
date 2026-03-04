@@ -177,81 +177,125 @@ export function SessionPanel({
                   // Separate parent sessions from child (crafter) sessions
                   const parentSessions = group.sessions.filter(s => !s.parentSessionId);
                   const childSessionMap = new Map<string, SessionInfo[]>();
+                  const orphanSessions: SessionInfo[] = [];
+                  
                   for (const s of group.sessions) {
                     if (s.parentSessionId) {
-                      const children = childSessionMap.get(s.parentSessionId) ?? [];
-                      children.push(s);
-                      childSessionMap.set(s.parentSessionId, children);
+                      // Check if parent exists in the current session list
+                      const parentExists = group.sessions.some(p => p.sessionId === s.parentSessionId);
+                      if (parentExists) {
+                        const children = childSessionMap.get(s.parentSessionId) ?? [];
+                        children.push(s);
+                        childSessionMap.set(s.parentSessionId, children);
+                      } else {
+                        // Parent doesn't exist - treat as orphan
+                        orphanSessions.push(s);
+                      }
                     }
                   }
 
-                  return parentSessions.map((s) => {
-                    const children = childSessionMap.get(s.sessionId) ?? [];
-                    const active = s.sessionId === selectedSessionId;
-                    const isEditing = editingId === s.sessionId;
-                    const displayName = s.name ?? getDefaultName(s);
-                    const isHovered = hoveredSession === s.sessionId;
+                  return (
+                    <>
+                      {parentSessions.map((s) => {
+                        const children = childSessionMap.get(s.sessionId) ?? [];
+                        const active = s.sessionId === selectedSessionId;
+                        const isEditing = editingId === s.sessionId;
+                        const displayName = s.name ?? getDefaultName(s);
+                        const isHovered = hoveredSession === s.sessionId;
 
-                    return (
-                      <div key={s.sessionId}>
-                        <SessionItem
-                          s={s}
-                          active={active}
-                          isEditing={isEditing}
-                          displayName={displayName}
-                          isHovered={isHovered}
-                          editName={editName}
-                          menuOpen={menuOpen}
-                          menuRef={menuRef}
-                          selectedSessionId={selectedSessionId}
-                          onSelect={onSelect}
-                          onSetHovered={setHoveredSession}
-                          onSetMenuOpen={setMenuOpen}
-                          onStartEdit={startEdit}
-                          onDelete={handleDelete}
-                          onSetEditingId={setEditingId}
-                          onSetEditName={setEditName}
-                          onRename={handleRename}
-                          indent={0}
-                        />
-                        {/* Child crafter sessions */}
-                        {children.length > 0 && (
-                          <div className="ml-3 pl-2 border-l-2 border-gray-200 dark:border-gray-700 space-y-0.5 mt-0.5">
-                            {children.map((child) => {
-                              const childActive = child.sessionId === selectedSessionId;
-                              const childIsEditing = editingId === child.sessionId;
-                              const childDisplayName = child.name ?? getDefaultName(child);
-                              const childIsHovered = hoveredSession === child.sessionId;
+                        return (
+                          <div key={s.sessionId}>
+                            <SessionItem
+                              s={s}
+                              active={active}
+                              isEditing={isEditing}
+                              displayName={displayName}
+                              isHovered={isHovered}
+                              editName={editName}
+                              menuOpen={menuOpen}
+                              menuRef={menuRef}
+                              selectedSessionId={selectedSessionId}
+                              onSelect={onSelect}
+                              onSetHovered={setHoveredSession}
+                              onSetMenuOpen={setMenuOpen}
+                              onStartEdit={startEdit}
+                              onDelete={handleDelete}
+                              onSetEditingId={setEditingId}
+                              onSetEditName={setEditName}
+                              onRename={handleRename}
+                              indent={0}
+                            />
+                            {/* Child crafter sessions */}
+                            {children.length > 0 && (
+                              <div className="ml-3 pl-2 border-l-2 border-gray-200 dark:border-gray-700 space-y-0.5 mt-0.5">
+                                {children.map((child) => {
+                                  const childActive = child.sessionId === selectedSessionId;
+                                  const childIsEditing = editingId === child.sessionId;
+                                  const childDisplayName = child.name ?? getDefaultName(child);
+                                  const childIsHovered = hoveredSession === child.sessionId;
 
-                              return (
-                                <SessionItem
-                                  key={child.sessionId}
-                                  s={child}
-                                  active={childActive}
-                                  isEditing={childIsEditing}
-                                  displayName={childDisplayName}
-                                  isHovered={childIsHovered}
-                                  editName={editName}
-                                  menuOpen={menuOpen}
-                                  menuRef={menuRef}
-                                  selectedSessionId={selectedSessionId}
-                                  onSelect={onSelect}
-                                  onSetHovered={setHoveredSession}
-                                  onSetMenuOpen={setMenuOpen}
-                                  onStartEdit={startEdit}
-                                  onDelete={handleDelete}
-                                  onSetEditingId={setEditingId}
-                                  onSetEditName={setEditName}
-                                  onRename={handleRename}
-                                  indent={1}
-                                />
-                              );
-                            })}
+                                  return (
+                                    <SessionItem
+                                      key={child.sessionId}
+                                      s={child}
+                                      active={childActive}
+                                      isEditing={childIsEditing}
+                                      displayName={childDisplayName}
+                                      isHovered={childIsHovered}
+                                      editName={editName}
+                                      menuOpen={menuOpen}
+                                      menuRef={menuRef}
+                                      selectedSessionId={selectedSessionId}
+                                      onSelect={onSelect}
+                                      onSetHovered={setHoveredSession}
+                                      onSetMenuOpen={setMenuOpen}
+                                      onStartEdit={startEdit}
+                                      onDelete={handleDelete}
+                                      onSetEditingId={setEditingId}
+                                      onSetEditName={setEditName}
+                                      onRename={handleRename}
+                                      indent={1}
+                                    />
+                                  );
+                                })}
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
-                    );
-                  });
+                        );
+                      })}
+                      {/* Orphan sessions (child sessions whose parent is not in the list) */}
+                      {orphanSessions.map((s) => {
+                        const active = s.sessionId === selectedSessionId;
+                        const isEditing = editingId === s.sessionId;
+                        const displayName = s.name ?? getDefaultName(s);
+                        const isHovered = hoveredSession === s.sessionId;
+
+                        return (
+                          <SessionItem
+                            key={s.sessionId}
+                            s={s}
+                            active={active}
+                            isEditing={isEditing}
+                            displayName={displayName}
+                            isHovered={isHovered}
+                            editName={editName}
+                            menuOpen={menuOpen}
+                            menuRef={menuRef}
+                            selectedSessionId={selectedSessionId}
+                            onSelect={onSelect}
+                            onSetHovered={setHoveredSession}
+                            onSetMenuOpen={setMenuOpen}
+                            onStartEdit={startEdit}
+                            onDelete={handleDelete}
+                            onSetEditingId={setEditingId}
+                            onSetEditName={setEditName}
+                            onRename={handleRename}
+                            indent={0}
+                          />
+                        );
+                      })}
+                    </>
+                  );
                 })()}
               </div>
             </div>
