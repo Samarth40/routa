@@ -13,6 +13,10 @@ use tokio::sync::RwLock;
 mod pty;
 pub use pty::{PtyState, pty_create, pty_write, pty_read, pty_resize, pty_kill, pty_list};
 
+// System tray module
+mod tray;
+pub use tray::GitHubRepo;
+
 // Re-export routa_server for external use
 pub use routa_server as server;
 use routa_server::acp::{
@@ -103,6 +107,18 @@ fn is_git_repo(path: String) -> bool {
 #[tauri::command]
 fn log_frontend(level: String, scope: String, message: String) {
     println!("[frontend:{}][{}] {}", level, scope, message);
+}
+
+/// Update the system tray menu with the current list of GitHub repos.
+///
+/// Called by the frontend after it loads (or saves) webhook configurations so
+/// that the tray immediately reflects the configured repositories.
+#[tauri::command]
+fn update_tray_github_repos(
+    app: tauri::AppHandle,
+    repos: Vec<GitHubRepo>,
+) -> Result<(), String> {
+    tray::update_tray_repos(&app, &repos).map_err(|e| e.to_string())
 }
 
 // ─── ACP Agent Installation State ─────────────────────────────────────────
@@ -610,6 +626,8 @@ pub fn run() {
             pty_resize,
             pty_kill,
             pty_list,
+            // Tray command so the frontend can push webhook configs
+            update_tray_github_repos,
         ])
         .setup(|app| {
             // ─── Build Application Menu ─────────────────────────────────────
@@ -706,6 +724,13 @@ pub fn run() {
                     _ => {}
                 }
             });
+            // ─── System Tray ────────────────────────────────────────────────
+            // Initialise with an empty repo list; the frontend calls
+            // `update_tray_github_repos` after loading webhook configs.
+            if let Err(e) = tray::setup_tray(app.handle(), &[]) {
+                eprintln!("[tray] Failed to set up system tray: {}", e);
+            }
+
             // Always open devtools (in both debug and release builds)
             if let Some(window) = app.get_webview_window("main") {
                 window.open_devtools();
