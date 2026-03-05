@@ -139,14 +139,9 @@ export function SessionPageClient() {
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(workspaceId);
   const { codebases } = useCodebases(workspaceId);
 
-  // Track whether repoSelection was restored from session metadata
-  const repoRestoredFromSessionRef = useRef(false);
-
   // Auto-select default codebase as repo when workspace changes
-  // but don't override if already restored from session metadata
   useEffect(() => {
     if (codebases.length === 0) return;
-    if (repoRestoredFromSessionRef.current) return;
     const def = codebases.find((c) => c.isDefault) ?? codebases[0];
     setRepoSelection({ path: def.repoPath, branch: def.branch ?? "", name: def.label ?? def.repoPath.split("/").pop() ?? "" });
   }, [codebases]);
@@ -181,10 +176,13 @@ export function SessionPageClient() {
   const resizeStartWidthRef = useRef(0);
 
   // ── Resizable left sidebar state ──────────────────────────────────
-  const [leftSidebarWidth, setLeftSidebarWidth] = useState(280);
+  const [leftSidebarWidth, setLeftSidebarWidth] = useState(320);
   const [isLeftResizing, setIsLeftResizing] = useState(false);
   const leftResizeStartXRef = useRef(0);
   const leftResizeStartWidthRef = useRef(0);
+
+  // ── Left sidebar tab state (Context or Tasks) ───────────────────────
+  const [leftSidebarTab, setLeftSidebarTab] = useState<"context" | "tasks">("context");
 
   // ── Left sidebar collapse ──────────────────────────────────────────
   const [isLeftSidebarCollapsed, setIsLeftSidebarCollapsed] = useState(false);
@@ -283,7 +281,7 @@ export function SessionPageClient() {
       })
       .then((data) => {
         if (!data?.session) return;
-        const { role, provider, cwd, branch } = data.session;
+        const { role, provider } = data.session;
         // Restore agent role if stored
         if (role && ["CRAFTER", "ROUTA", "GATE", "DEVELOPER"].includes(role)) {
           setSelectedAgent(role as AgentRole);
@@ -292,17 +290,7 @@ export function SessionPageClient() {
         if (provider) {
           acp.setProvider(provider);
         }
-        // Restore repo selection from session's cwd/branch
-        if (cwd) {
-          const matchedCodebase = codebases.find((c) => c.repoPath === cwd);
-          setRepoSelection({
-            path: cwd,
-            branch: branch ?? matchedCodebase?.branch ?? "",
-            name: matchedCodebase?.label ?? cwd.split("/").pop() ?? "",
-          });
-          repoRestoredFromSessionRef.current = true;
-        }
-        console.log(`[SessionPage] Restored session metadata: role=${role}, provider=${provider}, cwd=${cwd}, branch=${branch}`);
+        console.log(`[SessionPage] Restored session metadata: role=${role}, provider=${provider}`);
       })
       .catch((err) => {
         console.warn("[SessionPage] Failed to restore session metadata:", err);
@@ -369,8 +357,6 @@ export function SessionPageClient() {
 
   // Track if we've already sent the pending prompt for this session
   const pendingPromptSentRef = useRef<Set<string>>(new Set());
-  // Store consumed pending prompt text so it survives effect re-runs
-  const pendingPromptTextRef = useRef<Map<string, string>>(new Map());
 
   // Check for and send pending prompt after session is selected.
   // Waits for the ACP process to be ready (acp_status: "ready" SSE event)
@@ -378,45 +364,34 @@ export function SessionPageClient() {
   useEffect(() => {
     if (!sessionId || !acp.connected || acp.loading) return;
 
-    // Already sent for this session — done
+    // Only send once per session per page load
     if (pendingPromptSentRef.current.has(sessionId)) return;
 
-    // Try to consume pending prompt (only consumed once from storage)
-    if (!pendingPromptTextRef.current.has(sessionId)) {
-      const pendingText = consumePendingPrompt(sessionId);
-      if (pendingText) {
-        pendingPromptTextRef.current.set(sessionId, pendingText);
-      }
-    }
-
-    const pendingText = pendingPromptTextRef.current.get(sessionId);
+    // Check for pending prompt from home page navigation
+    const pendingText = consumePendingPrompt(sessionId);
     if (!pendingText) return;
 
-    // Check if ACP is already ready via SSE updates or session record
-    const acpReady = acp.updates.some(
-      (u) => {
-        const update = (u as Record<string, unknown>).update as Record<string, unknown> | undefined;
-        return update?.sessionUpdate === "acp_status" && update?.status === "ready";
-      }
+    // Check if ACP is already ready (e.g. session was reused)
+    const lastUpdate = acp.updates.findLast(
+      (u) => (u as Record<string, unknown>).update &&
+        ((u as Record<string, unknown>).update as Record<string, unknown>).sessionUpdate === "acp_status"
     );
+    const acpReady = lastUpdate &&
+      ((lastUpdate as Record<string, unknown>).update as Record<string, unknown>).status === "ready";
 
     if (acpReady) {
       console.log(`[SessionPage] ACP ready, sending pending prompt for session ${sessionId}`);
       pendingPromptSentRef.current.add(sessionId);
-      pendingPromptTextRef.current.delete(sessionId);
       acp.prompt(pendingText);
       return;
     }
 
-    // Not ready yet — set a fallback timeout.
-    // The session/prompt handler has auto-create logic, so even if the
-    // acp_status event is missed, the prompt will trigger session creation.
+    // Not ready yet — wait for the acp_status event via polling updates
     console.log(`[SessionPage] Waiting for ACP ready before sending pending prompt for session ${sessionId}`);
+    pendingPromptSentRef.current.add(sessionId);
+
+    // Use a timeout as fallback (ACP might already be ready but event was missed)
     const timer = setTimeout(() => {
-      if (pendingPromptSentRef.current.has(sessionId)) return;
-      console.log(`[SessionPage] ACP ready timeout, sending pending prompt for session ${sessionId}`);
-      pendingPromptSentRef.current.add(sessionId);
-      pendingPromptTextRef.current.delete(sessionId);
       acp.prompt(pendingText);
     }, 8000);
 
@@ -658,8 +633,15 @@ export function SessionPageClient() {
           }
 
           case "completed":
+
           case "ended": {
             agent.status = "completed";
+            // Sync task status: mark corresponding task as completed
+            if (agent.taskId) {
+              setRoutaTasks((prev) =>
+                prev.map((t) => (t.id === agent.taskId ? { ...t, status: "completed" as const } : t))
+              );
+            }
             break;
           }
 
@@ -677,6 +659,12 @@ export function SessionPageClient() {
                   timestamp: new Date(),
                 });
               }
+              // Sync task status for failed tasks
+              if (agent.taskId) {
+                setRoutaTasks((prev) =>
+                  prev.map((t) => (t.id === agent.taskId ? { ...t, status: "confirmed" as const } : t))
+                );
+              }
             } else {
               agent.status = "completed";
               if (summary) {
@@ -686,6 +674,12 @@ export function SessionPageClient() {
                   content: summary,
                   timestamp: new Date(),
                 });
+              }
+              // Sync task status for successful tasks
+              if (agent.taskId) {
+                setRoutaTasks((prev) =>
+                  prev.map((t) => (t.id === agent.taskId ? { ...t, status: "completed" as const } : t))
+                );
               }
             }
             break;
@@ -702,36 +696,6 @@ export function SessionPageClient() {
       return changed ? updated : prev;
     });
   }, [acp.updates]);
-
-  // ── Sync crafter agent status back to task status ────────────────────
-  // When a CRAFTER finishes (completed/error) via SSE, update the
-  // corresponding routaTask so the Tasks view stays in sync.
-  useEffect(() => {
-    setCrafterAgents((agents) => {
-      // Read-only — we just need the current snapshot
-      for (const agent of agents) {
-        if (!agent.taskId) continue;
-        if (agent.status === "completed") {
-          setRoutaTasks((prev) =>
-            prev.map((t) =>
-              t.id === agent.taskId && t.status === "running"
-                ? { ...t, status: "completed" as const }
-                : t
-            )
-          );
-        } else if (agent.status === "error") {
-          setRoutaTasks((prev) =>
-            prev.map((t) =>
-              t.id === agent.taskId && t.status === "running"
-                ? { ...t, status: "confirmed" as const }
-                : t
-            )
-          );
-        }
-      }
-      return agents; // no mutation
-    });
-  }, [crafterAgents]);
 
   const bumpRefresh = useCallback(() => {
     setRefreshKey((k) => k + 1);
@@ -1156,12 +1120,10 @@ export function SessionPageClient() {
       }
 
       // Mark status based on delegation outcome
-      // If delegation succeeded, keep task as "running" — it will be marked
-      // "completed" when the CRAFTER agent finishes via SSE updates.
       setRoutaTasks((prev) =>
         prev.map((t) =>
           t.id === taskId
-            ? { ...t, status: delegationError ? ("confirmed" as const) : ("running" as const) }
+            ? { ...t, status: delegationError ? ("confirmed" as const) : ("completed" as const) }
             : t
         )
       );
@@ -1750,26 +1712,93 @@ export function SessionPageClient() {
             </div>
           </div>
 
-          {/* Sessions header + New Session */}
-          <div className="px-3 py-2 flex items-center justify-between border-b border-gray-100 dark:border-gray-800">
-            <span className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Session Context</span>
-            <button
-              onClick={() => handleCreateSession("")}
-              disabled={acp.providers.length === 0 || !acp.selectedProvider}
-              className="px-2 py-0.5 text-[11px] font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              + New
-            </button>
+          {/* Sessions header + New Session + Tab switcher */}
+          <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex gap-1 flex-1">
+                <button
+                  onClick={() => setLeftSidebarTab("context")}
+                  className={`flex-1 px-2 py-1 text-[10px] font-medium rounded transition-colors ${
+                    leftSidebarTab === "context"
+                      ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
+                  }`}
+                >
+                  Context
+                </button>
+                <button
+                  onClick={() => setLeftSidebarTab("tasks")}
+                  className={`flex-1 px-2 py-1 text-[10px] font-medium rounded transition-colors ${
+                    leftSidebarTab === "tasks"
+                      ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
+                  }`}
+                >
+                  Tasks {routaTasks.length > 0 && `(${routaTasks.length})`}
+                </button>
+              </div>
+              <button
+                onClick={() => handleCreateSession("")}
+                disabled={acp.providers.length === 0 || !acp.selectedProvider}
+                title="New Session"
+                className="px-1.5 py-0.5 text-[10px] font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                +
+              </button>
+            </div>
           </div>
 
-          {/* Session Context - focused on current session hierarchy */}
-          <div className="flex-1 min-h-0 overflow-y-auto">
-            <SessionContextPanel
-              sessionId={sessionId}
-              workspaceId={workspaceId}
-              onSelectSession={handleSelectSession}
-              refreshTrigger={refreshKey}
-            />
+          {/* Session Context OR Task Panel */}
+          <div className="flex-1 min-h-0 overflow-hidden">
+            {leftSidebarTab === "context" ? (
+              /* ─── Context Tab ─────────────────────────────── */
+              <div className="h-full overflow-y-auto">
+                <SessionContextPanel
+                  sessionId={sessionId}
+                  workspaceId={workspaceId}
+                  onSelectSession={handleSelectSession}
+                  refreshTrigger={refreshKey}
+                />
+              </div>
+            ) : (
+              /* ─── Tasks Tab ──────────────────────────────── */
+              <div className="h-full flex flex-col">
+                {hasCollabNotes ? (
+                  <CollaborativeTaskEditor
+                    notes={sessionNotes}
+                    connected={notesHook.connected}
+                    onUpdateNote={notesHook.updateNote}
+                    onDeleteNote={notesHook.deleteNote}
+                    workspaceId={workspaceId}
+                    crafterAgents={crafterAgents}
+                    activeCrafterId={activeCrafterId}
+                    onSelectCrafter={handleSelectCrafter}
+                    onExecuteTask={handleExecuteNoteTask}
+                    onExecuteAll={handleExecuteAllNoteTasks}
+                    concurrency={concurrency}
+                    onConcurrencyChange={handleConcurrencyChange}
+                    onUpdateAgentMessages={handleUpdateAgentMessages}
+                  />
+                ) : (
+                  <TaskPanel
+                    tasks={routaTasks}
+                    onConfirmAll={handleConfirmAllTasks}
+                    onExecuteAll={handleExecuteAllTasks}
+                    onConfirmTask={handleConfirmTask}
+                    onEditTask={handleEditTask}
+                    onExecuteTask={handleExecuteTask}
+                    crafterAgents={crafterAgents}
+                    activeCrafterId={activeCrafterId}
+                    onSelectCrafter={handleSelectCrafter}
+                    concurrency={concurrency}
+                    onConcurrencyChange={handleConcurrencyChange}
+                    onAbortCrafter={handleAbortCrafter}
+                    onMarkDoneCrafter={handleMarkDoneCrafter}
+                    onUpdateAgentMessages={handleUpdateAgentMessages}
+                  />
+                )}
+              </div>
+            )}
           </div>
 
           {/* Bottom actions */}
@@ -1828,62 +1857,10 @@ export function SessionPageClient() {
             codebases={codebases}
           />
         </main>
-
-        {/* ─── Right Panel: Routa Sub-Tasks (Resizable) ───────────── */}
-        {showTaskPanel && (
-          <aside
-            className="shrink-0 border-l border-gray-200 dark:border-gray-800 bg-white dark:bg-[#13151d] flex flex-col overflow-hidden relative"
-            style={{ width: `${sidebarWidth}px` }}
-          >
-            {/* Resize handle */}
-            <div
-              className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize z-20 hover:bg-indigo-500/30 active:bg-indigo-500/50 transition-colors group"
-              onMouseDown={handleResizeStart}
-            >
-              <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 rounded-full bg-gray-300 dark:bg-gray-600 group-hover:bg-indigo-400 group-active:bg-indigo-500 transition-colors" />
-            </div>
-
-            {/* When collaborative notes exist, show Collab Edit directly; otherwise show TaskPanel */}
-            {hasCollabNotes ? (
-              <CollaborativeTaskEditor
-                notes={sessionNotes}
-                connected={notesHook.connected}
-                onUpdateNote={notesHook.updateNote}
-                onDeleteNote={notesHook.deleteNote}
-                workspaceId={workspaceId}
-                crafterAgents={crafterAgents}
-                activeCrafterId={activeCrafterId}
-                onSelectCrafter={handleSelectCrafter}
-                onExecuteTask={handleExecuteNoteTask}
-                onExecuteAll={handleExecuteAllNoteTasks}
-                concurrency={concurrency}
-                onConcurrencyChange={handleConcurrencyChange}
-                onUpdateAgentMessages={handleUpdateAgentMessages}
-              />
-            ) : (
-              <TaskPanel
-                tasks={routaTasks}
-                onConfirmAll={handleConfirmAllTasks}
-                onExecuteAll={handleExecuteAllTasks}
-                onConfirmTask={handleConfirmTask}
-                onEditTask={handleEditTask}
-                onExecuteTask={handleExecuteTask}
-                crafterAgents={crafterAgents}
-                activeCrafterId={activeCrafterId}
-                onSelectCrafter={handleSelectCrafter}
-                concurrency={concurrency}
-                onConcurrencyChange={handleConcurrencyChange}
-                onAbortCrafter={handleAbortCrafter}
-                onMarkDoneCrafter={handleMarkDoneCrafter}
-                onUpdateAgentMessages={handleUpdateAgentMessages}
-              />
-            )}
-          </aside>
-        )}
       </div>
 
       {/* ─── Resize overlay (prevents iframe/content interference) ─── */}
-      {(isResizing || isLeftResizing) && (
+      {isLeftResizing && (
         <div className="fixed inset-0 z-50 cursor-col-resize" />
       )}
 

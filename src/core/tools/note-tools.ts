@@ -144,7 +144,8 @@ export class NoteTools {
     }
 
     note.content = params.content;
-    if (params.title) {
+    // Only update title for non-spec notes. Spec note title should remain constant.
+    if (params.title && params.noteId !== SPEC_NOTE_ID) {
       note.title = params.title;
     }
     note.updatedAt = new Date();
