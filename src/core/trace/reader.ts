@@ -8,6 +8,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { TraceRecord, TraceEventType } from "./types";
+import { getTracesDir } from "../storage/folder-slug";
 
 /**
  * Check if running in a serverless environment (e.g., Vercel)
@@ -254,23 +255,35 @@ export class TraceReader {
   }
 
   /**
-   * Collect all trace base directories: the primary one and any repo-specific ones
-   * under .routa/repos/. This ensures traces written by sessions with a repo-
-   * specific cwd are also discovered.
+   * Collect all trace base directories: the primary one, the new ~/.routa/ path,
+   * and any repo-specific ones under .routa/repos/.
+   * This ensures traces from all storage locations are discovered.
    */
   async #getAllTraceBaseDirs(): Promise<string[]> {
     const dirs: string[] = [];
 
-    // 1. Primary trace directory
+    // 1. New storage path: ~/.routa/projects/{folder-slug}/traces/
+    const workspaceRoot = this.#baseDir.replace(/\.routa\/traces$/, "");
+    const newTraceDir = getTracesDir(workspaceRoot);
+    try {
+      await fs.access(newTraceDir);
+      dirs.push(newTraceDir);
+    } catch {
+      // New trace dir doesn't exist yet — that's OK
+    }
+
+    // 2. Legacy primary trace directory: {project}/.routa/traces/
     try {
       await fs.access(this.#baseDir);
-      dirs.push(this.#baseDir);
+      // Only add if different from the new path (avoid duplicates)
+      if (this.#baseDir !== newTraceDir) {
+        dirs.push(this.#baseDir);
+      }
     } catch {
       // Primary trace dir doesn't exist — that's OK
     }
 
-    // 2. Scan .routa/repos/*/.routa/traces/ for repo-specific trace directories
-    const workspaceRoot = this.#baseDir.replace(/\.routa\/traces$/, "");
+    // 3. Scan .routa/repos/*/.routa/traces/ for repo-specific trace directories
     const reposDir = path.join(workspaceRoot, ".routa", "repos");
     try {
       const repoEntries = await fs.readdir(reposDir, { withFileTypes: true });

@@ -25,6 +25,7 @@ pub mod rpc;
 pub mod shell_env;
 pub mod skills;
 pub mod state;
+pub mod storage;
 pub mod store;
 pub mod tools;
 pub mod trace;

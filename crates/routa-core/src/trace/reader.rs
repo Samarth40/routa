@@ -1,18 +1,22 @@
 //! TraceReader — Query and read trace records from filesystem storage.
 //!
-//! Storage path: `<workspace>/.routa/traces/{day}/traces-{datetime}.jsonl`
+//! Storage paths:
+//! - New: `~/.routa/projects/{folder-slug}/traces/{day}/traces-{datetime}.jsonl`
+//! - Legacy: `<workspace>/.routa/traces/{day}/traces-{datetime}.jsonl`
 //!
 //! Features:
 //! - Filter traces by session, file, workspace, date range
 //! - Retrieve individual traces by ID
 //! - Export traces in standard Agent Trace JSON format
 //! - Efficient file scanning with early termination on match
+//! - Backward-compatible: searches both new and legacy paths
 
 use std::path::{Path, PathBuf};
 use std::collections::HashMap;
 use serde_json::Value;
 
 use super::types::TraceRecord;
+use crate::storage::get_traces_dir;
 
 /// Query parameters for filtering traces.
 #[derive(Debug, Clone, Default)]
@@ -38,41 +42,51 @@ pub struct TraceQuery {
 /// TraceReader provides querying capabilities over stored traces.
 #[derive(Clone)]
 pub struct TraceReader {
-    /// Base directory for trace files (e.g., "/project/.routa/traces")
-    base_dir: PathBuf,
+    /// New trace directory: ~/.routa/projects/{slug}/traces
+    new_base_dir: PathBuf,
+    /// Legacy trace directory: {workspace}/.routa/traces
+    legacy_base_dir: PathBuf,
 }
 
 impl TraceReader {
     /// Create a new TraceReader with the given workspace root.
     ///
-    /// Traces are read from `<workspace_root>/.routa/traces/`.
+    /// Reads from both `~/.routa/projects/{folder-slug}/traces/` (new)
+    /// and `<workspace_root>/.routa/traces/` (legacy).
     pub fn new(workspace_root: impl AsRef<Path>) -> Self {
-        let base_dir = workspace_root.as_ref().join(".routa").join("traces");
+        let workspace_str = workspace_root.as_ref().to_string_lossy().to_string();
+        let new_base_dir = get_traces_dir(&workspace_str);
+        let legacy_base_dir = workspace_root.as_ref().join(".routa").join("traces");
         Self {
-            base_dir,
+            new_base_dir,
+            legacy_base_dir,
         }
     }
 
-    /// Create a TraceReader with a custom base directory.
+    /// Create a TraceReader with a custom base directory (used as legacy path).
     pub fn with_base_dir(base_dir: impl AsRef<Path>) -> Self {
         Self {
-            base_dir: base_dir.as_ref().to_path_buf(),
+            new_base_dir: base_dir.as_ref().to_path_buf(),
+            legacy_base_dir: base_dir.as_ref().to_path_buf(),
         }
     }
 
-    /// Collect all trace base directories: the primary one and any repo-specific ones
-    /// under `.routa/repos/`. Mirrors the TypeScript `#getAllTraceBaseDirs()`.
+    /// Collect all trace base directories: new path, legacy path, and repo-specific ones.
     async fn get_all_trace_base_dirs(&self) -> Vec<PathBuf> {
         let mut dirs = Vec::new();
 
-        // 1. Primary trace directory
-        if self.base_dir.exists() {
-            dirs.push(self.base_dir.clone());
+        // 1. New storage path: ~/.routa/projects/{slug}/traces/
+        if self.new_base_dir.exists() {
+            dirs.push(self.new_base_dir.clone());
         }
 
-        // 2. Scan .routa/repos/*/.routa/traces/ for repo-specific trace directories
-        // base_dir is <workspace>/.routa/traces, so workspace root is two levels up
-        if let Some(routa_dir) = self.base_dir.parent() {
+        // 2. Legacy path: {workspace}/.routa/traces/
+        if self.legacy_base_dir.exists() && self.legacy_base_dir != self.new_base_dir {
+            dirs.push(self.legacy_base_dir.clone());
+        }
+
+        // 3. Scan .routa/repos/*/.routa/traces/ for repo-specific trace directories
+        if let Some(routa_dir) = self.legacy_base_dir.parent() {
             let repos_dir = routa_dir.join("repos");
             if let Ok(mut readdir) = tokio::fs::read_dir(&repos_dir).await {
                 while let Ok(Some(entry)) = readdir.next_entry().await {

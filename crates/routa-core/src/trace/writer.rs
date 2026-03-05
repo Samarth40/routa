@@ -1,6 +1,6 @@
 //! TraceWriter — JSONL append-only writer for trace storage.
 //!
-//! Storage path: `<workspace>/.routa/traces/{day}/traces-{datetime}.jsonl`
+//! Storage path: `~/.routa/projects/{folder-slug}/traces/{day}/traces-{datetime}.jsonl`
 //!
 //! Features:
 //! - Thread-safe async append
@@ -16,11 +16,12 @@ use tokio::sync::Mutex;
 use chrono::{Local, Utc};
 
 use super::TraceRecord;
+use crate::storage::get_traces_dir;
 
 /// TraceWriter manages JSONL file writing for trace records.
 #[derive(Clone)]
 pub struct TraceWriter {
-    /// Base directory for trace files (e.g., "/project/.routa/traces")
+    /// Base directory for trace files (e.g., "~/.routa/projects/{slug}/traces")
     base_dir: PathBuf,
     /// Current open file (lazy-initialized)
     current_file: Arc<Mutex<Option<CurrentFile>>>,
@@ -36,9 +37,10 @@ struct CurrentFile {
 impl TraceWriter {
     /// Create a new TraceWriter with the given workspace root.
     ///
-    /// Traces are stored in `<workspace_root>/.routa/traces/`.
+    /// Traces are stored in `~/.routa/projects/{folder-slug}/traces/`.
     pub fn new(workspace_root: impl AsRef<Path>) -> Self {
-        let base_dir = workspace_root.as_ref().join(".routa").join("traces");
+        let workspace_str = workspace_root.as_ref().to_string_lossy().to_string();
+        let base_dir = get_traces_dir(&workspace_str);
         Self {
             base_dir,
             current_file: Arc::new(Mutex::new(None)),

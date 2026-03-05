@@ -1,7 +1,8 @@
 /**
  * TraceWriter - Append-only JSONL file writer for trace records.
  *
- * Writes traces to: <workspace>/.routa/traces/{day}/traces-{datetime}.jsonl
+ * Local storage: ~/.routa/projects/{folder-slug}/traces/{day}/traces-{datetime}.jsonl
+ * Serverless: Postgres via PgTraceStore
  *
  * In serverless environments (Vercel), traces are written to Postgres instead
  * of the filesystem (which is ephemeral in /tmp).
@@ -10,6 +11,7 @@
 import { TraceRecord } from "./types";
 import path from "path";
 import fs from "fs/promises";
+import { getTracesDir } from "../storage/folder-slug";
 
 /**
  * Check if running in a serverless environment (e.g., Vercel)
@@ -39,6 +41,7 @@ function formatDateTime(date: Date): string {
  * TraceWriter manages JSONL trace file writing with automatic directory creation
  * and daily file rotation.
  *
+ * Local traces are stored under ~/.routa/projects/{folder-slug}/traces/.
  * In serverless environments (Vercel), traces are written to Postgres since
  * the filesystem is ephemeral.
  */
@@ -55,9 +58,10 @@ export class TraceWriter {
 
   /**
    * Get the trace directory path for a given day (local only).
+   * Now uses ~/.routa/projects/{folder-slug}/traces/{day}
    */
   private getTraceDir(day: string): string {
-    return path.join(this.cwd, ".routa", "traces", day);
+    return path.join(getTracesDir(this.cwd), day);
   }
 
   /**
@@ -93,7 +97,7 @@ export class TraceWriter {
       }
     }
 
-    // Local: write to JSONL file
+    // Local: write to JSONL file under ~/.routa/projects/{slug}/traces/
     const day = formatDay(new Date());
     const filePath = await this.getTracePath(day);
     const line = JSON.stringify(record) + "\n";
