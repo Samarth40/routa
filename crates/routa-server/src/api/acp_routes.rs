@@ -14,6 +14,7 @@ use tokio_stream::StreamExt as _;
 use crate::acp;
 use crate::error::ServerError;
 use crate::state::AppState;
+use routa_core::storage::{LocalSessionProvider, SessionRecord};
 
 pub fn router() -> Router<AppState> {
     Router::new().route("/", get(acp_sse).post(acp_rpc))
@@ -254,6 +255,9 @@ async fn acp_rpc(
                         tracing::info!("[ACP Route] Session {} persisted to DB", session_id);
                     }
 
+                    // Also persist to local JSONL file for file-level persistence
+                    persist_session_to_jsonl(&session_id, &cwd, &workspace_id, provider.as_deref(), role.as_deref(), parent_session_id.as_deref()).await;
+
                     Ok(AcpResponse::Json(Json(serde_json::json!({
                         "jsonrpc": "2.0",
                         "id": id,
@@ -374,6 +378,9 @@ async fn acp_rpc(
                         {
                             tracing::warn!("[ACP Route] Failed to persist auto-created session: {}", e);
                         }
+
+                        // Also persist to local JSONL file
+                        persist_session_to_jsonl(&session_id, &cwd, &workspace_id, provider.as_deref(), role.as_deref(), None).await;
                     }
                     Err(e) => {
                         tracing::error!("[ACP Route] Failed to auto-create session: {}", e);
@@ -634,4 +641,35 @@ async fn acp_sse(
     };
 
     Sse::new(stream)
+}
+
+/// Persist a session to local JSONL file (best-effort, non-blocking).
+async fn persist_session_to_jsonl(
+    session_id: &str,
+    cwd: &str,
+    workspace_id: &str,
+    provider: Option<&str>,
+    role: Option<&str>,
+    parent_session_id: Option<&str>,
+) {
+    let now = chrono::Utc::now().to_rfc3339();
+    let record = SessionRecord {
+        id: session_id.to_string(),
+        name: None,
+        cwd: cwd.to_string(),
+        branch: None,
+        workspace_id: workspace_id.to_string(),
+        routa_agent_id: None,
+        provider: provider.map(|s| s.to_string()),
+        role: role.map(|s| s.to_string()),
+        mode_id: None,
+        model: None,
+        parent_session_id: parent_session_id.map(|s| s.to_string()),
+        created_at: now.clone(),
+        updated_at: now,
+    };
+    let local = LocalSessionProvider::new(cwd);
+    if let Err(e) = local.save(&record).await {
+        tracing::warn!("[ACP Route] Failed to persist session to JSONL: {}", e);
+    }
 }
