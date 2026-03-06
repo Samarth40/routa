@@ -34,20 +34,21 @@ function resolveOpenCodeBin() {
   }
 
   // Walk up from opencode-ai's bin dir looking for the platform binary
-  // (same logic as the opencode-ai wrapper script)
+  // (same logic as the opencode-ai wrapper script).
+  // Prefer glibc binaries over musl since we now use Debian as the base image.
   const platformCandidates = [
-    // Linux arm64 musl (Alpine)
-    '/usr/local/lib/node_modules/opencode-ai/node_modules/opencode-linux-arm64-musl/bin/opencode',
-    '/usr/local/lib/node_modules/opencode-linux-arm64-musl/bin/opencode',
-    // Linux x64 musl (Alpine)
-    '/usr/local/lib/node_modules/opencode-ai/node_modules/opencode-linux-x64-musl/bin/opencode',
-    '/usr/local/lib/node_modules/opencode-linux-x64-musl/bin/opencode',
-    // Linux arm64 glibc
+    // Linux arm64 glibc (Debian/Ubuntu)
     '/usr/local/lib/node_modules/opencode-ai/node_modules/opencode-linux-arm64/bin/opencode',
     '/usr/local/lib/node_modules/opencode-linux-arm64/bin/opencode',
-    // Linux x64 glibc
+    // Linux x64 glibc (Debian/Ubuntu)
     '/usr/local/lib/node_modules/opencode-ai/node_modules/opencode-linux-x64/bin/opencode',
     '/usr/local/lib/node_modules/opencode-linux-x64/bin/opencode',
+    // Linux arm64 musl (Alpine fallback)
+    '/usr/local/lib/node_modules/opencode-ai/node_modules/opencode-linux-arm64-musl/bin/opencode',
+    '/usr/local/lib/node_modules/opencode-linux-arm64-musl/bin/opencode',
+    // Linux x64 musl (Alpine fallback)
+    '/usr/local/lib/node_modules/opencode-ai/node_modules/opencode-linux-x64-musl/bin/opencode',
+    '/usr/local/lib/node_modules/opencode-linux-x64-musl/bin/opencode',
     // Fallback system paths
     '/usr/local/bin/opencode',
     '/usr/bin/opencode',
