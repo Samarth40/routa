@@ -56,7 +56,8 @@ After generating or modifying code, agents must run the following checks automat
 
 ### Co-Author Format
 
-Every commit must include a co-author line:
+- If you want to add close issue, should view issue against the main branch with `gh issue view <issue-id>` 
+- Every commit must include a co-author line:
 
 ```
 Co-authored-by: Kiro AI (Claude Opus 4.6) <kiro@kiro.dev>
