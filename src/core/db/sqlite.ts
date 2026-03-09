@@ -55,7 +55,9 @@ function initializeSqliteTables(db: SqliteDatabase): void {
       db.run(sqlStatement);
     } catch (error) {
       const message = error instanceof Error ? error.message.toLowerCase() : "";
-      if (!message.includes("duplicate column name")) {
+      const causeMessage = error instanceof Error && error.cause instanceof Error
+        ? error.cause.message.toLowerCase() : "";
+      if (!message.includes("duplicate column name") && !causeMessage.includes("duplicate column name")) {
         throw error;
       }
     }
