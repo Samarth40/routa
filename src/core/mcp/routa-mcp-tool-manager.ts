@@ -165,6 +165,13 @@ export class RoutaMcpToolManager {
     this.registerSearchCards(server);
     this.registerListCardsByColumn(server);
     this.registerDecomposeTasks(server);
+    // Artifact tools
+    this.registerRequestArtifact(server);
+    this.registerProvideArtifact(server);
+    this.registerListArtifacts(server);
+    this.registerGetArtifact(server);
+    this.registerListPendingArtifactRequests(server);
+    this.registerCaptureScreenshot(server);
   }
 
   // ─── Task Tools ────────────────────────────────────────────────────
@@ -1141,6 +1148,135 @@ Note: taskId must be a UUID from create_task, not a task name.`,
           workspaceId: params.workspaceId,
           tasks: params.tasks,
           columnId: params.columnId,
+        });
+        return this.toMcpResult(result);
+      }
+    );
+  }
+
+  // ─── Artifact Tools ───────────────────────────────────────────────────
+
+  private registerRequestArtifact(server: McpServer) {
+    server.tool(
+      "request_artifact",
+      `Request an artifact from another agent (e.g., screenshot, test results).
+Used by verification agents to request evidence from implementation agents.`,
+      {
+        fromAgentId: z.string().describe("ID of the requesting agent"),
+        toAgentId: z.string().describe("ID of the agent to provide the artifact"),
+        artifactType: z.enum(["screenshot", "test_results", "code_diff", "logs"]).describe("Type of artifact"),
+        taskId: z.string().describe("Task ID this artifact is for"),
+        context: z.string().optional().describe("Context or instructions for the request"),
+      },
+      async (params) => {
+        const result = await this.tools.requestArtifact({
+          ...params,
+          workspaceId: this.workspaceId,
+        });
+        return this.toMcpResult(result);
+      }
+    );
+  }
+
+  private registerProvideArtifact(server: McpServer) {
+    server.tool(
+      "provide_artifact",
+      `Provide an artifact (screenshot, test results, etc.) for a task.
+Can be in response to a request or proactively provided.`,
+      {
+        agentId: z.string().describe("ID of the providing agent"),
+        type: z.enum(["screenshot", "test_results", "code_diff", "logs"]).describe("Type of artifact"),
+        taskId: z.string().describe("Task ID this artifact is for"),
+        content: z.string().describe("Artifact content (base64 for images, text for others)"),
+        context: z.string().optional().describe("Description or context"),
+        requestId: z.string().optional().describe("Request ID if fulfilling a request"),
+        metadata: z.record(z.string(), z.string()).optional().describe("Additional metadata"),
+      },
+      async (params) => {
+        const result = await this.tools.provideArtifact({
+          agentId: params.agentId,
+          type: params.type as "screenshot" | "test_results" | "code_diff" | "logs",
+          taskId: params.taskId,
+          workspaceId: this.workspaceId,
+          content: params.content,
+          context: params.context,
+          requestId: params.requestId,
+          metadata: params.metadata,
+        });
+        return this.toMcpResult(result);
+      }
+    );
+  }
+
+  private registerListArtifacts(server: McpServer) {
+    server.tool(
+      "list_artifacts",
+      "List artifacts for a task",
+      {
+        taskId: z.string().describe("Task ID to list artifacts for"),
+        type: z.enum(["screenshot", "test_results", "code_diff", "logs"]).optional().describe("Filter by type"),
+      },
+      async (params) => {
+        const result = await this.tools.listArtifacts({
+          taskId: params.taskId,
+          type: params.type as "screenshot" | "test_results" | "code_diff" | "logs" | undefined,
+        });
+        return this.toMcpResult(result);
+      }
+    );
+  }
+
+  private registerGetArtifact(server: McpServer) {
+    server.tool(
+      "get_artifact",
+      "Get a specific artifact by ID",
+      {
+        artifactId: z.string().describe("Artifact ID"),
+      },
+      async (params) => {
+        const result = await this.tools.getArtifact(params.artifactId);
+        return this.toMcpResult(result);
+      }
+    );
+  }
+
+  private registerListPendingArtifactRequests(server: McpServer) {
+    server.tool(
+      "list_pending_artifact_requests",
+      "List pending artifact requests for an agent",
+      {
+        agentId: z.string().describe("Agent ID to list pending requests for"),
+      },
+      async (params) => {
+        const result = await this.tools.listPendingArtifactRequests(params.agentId);
+        return this.toMcpResult(result);
+      }
+    );
+  }
+
+  private registerCaptureScreenshot(server: McpServer) {
+    server.tool(
+      "capture_screenshot",
+      "Capture a screenshot using agent-browser and store it as an artifact",
+      {
+        agentId: z.string().describe("ID of the agent capturing the screenshot"),
+        taskId: z.string().describe("Task ID this screenshot is for"),
+        url: z.string().optional().describe("URL to navigate to before capturing"),
+        fullPage: z.boolean().optional().describe("Capture full page (default: false)"),
+        annotate: z.boolean().optional().describe("Annotate interactive elements (default: false)"),
+        context: z.string().optional().describe("Description or context for this screenshot"),
+        outputPath: z.string().optional().describe("Path to save screenshot (optional)"),
+      },
+      async (params) => {
+        const result = await this.tools.captureScreenshot({
+          agentId: params.agentId,
+          taskId: params.taskId,
+          workspaceId: this.workspaceId,
+          url: params.url,
+          fullPage: params.fullPage,
+          annotate: params.annotate,
+          context: params.context,
+          outputPath: params.outputPath,
         });
         return this.toMcpResult(result);
       }

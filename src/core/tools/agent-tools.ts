@@ -32,19 +32,37 @@ import {
 } from "../models/agent";
 import { Task, TaskStatus, VerificationVerdict, createTask as createTaskModel } from "../models/task";
 import { MessageRole, createMessage, CompletionReport } from "../models/message";
+import {
+  Artifact,
+  ArtifactRequest,
+  ArtifactType,
+  createArtifact,
+  createArtifactRequest,
+} from "../models/artifact";
 import { AgentStore } from "../store/agent-store";
 import { ConversationStore } from "../store/conversation-store";
 import { TaskStore } from "../store/task-store";
+import { ArtifactStore } from "../store/artifact-store";
 import { EventBus, AgentEventType } from "../events/event-bus";
 import { ToolResult, successResult, errorResult } from "./tool-result";
 
 export class AgentTools {
+  private artifactStore?: ArtifactStore;
+
   constructor(
     private agentStore: AgentStore,
     private conversationStore: ConversationStore,
     private taskStore: TaskStore,
     private eventBus: EventBus
   ) {}
+
+  /**
+   * Set artifact store for artifact-related tools.
+   * Optional to maintain backward compatibility.
+   */
+  setArtifactStore(store: ArtifactStore): void {
+    this.artifactStore = store;
+  }
 
   // ─── Tool 0: Create Task ────────────────────────────────────────────
 
@@ -750,5 +768,358 @@ export class AgentTools {
         timestamp: e.timestamp.toISOString(),
       })),
     });
+  }
+
+  // ─── Tool 13: Request Artifact ─────────────────────────────────────────
+
+  /**
+   * Request an artifact from another agent.
+   * Used by verification agents (like Desk Check) to request evidence from implementation agents.
+   */
+  async requestArtifact(params: {
+    fromAgentId: string;
+    toAgentId: string;
+    artifactType: ArtifactType;
+    taskId: string;
+    workspaceId: string;
+    context?: string;
+  }): Promise<ToolResult> {
+    if (!this.artifactStore) {
+      return errorResult("Artifact store not configured");
+    }
+
+    const { fromAgentId, toAgentId, artifactType, taskId, workspaceId, context } = params;
+
+    // Validate target agent exists
+    const toAgent = await this.agentStore.get(toAgentId);
+    if (!toAgent) {
+      return errorResult(`Target agent not found: ${toAgentId}`);
+    }
+
+    // Create artifact request
+    const request = createArtifactRequest({
+      id: uuidv4(),
+      fromAgentId,
+      toAgentId,
+      artifactType,
+      taskId,
+      workspaceId,
+      context,
+    });
+
+    await this.artifactStore.saveRequest(request);
+
+    // Emit event to notify target agent
+    this.eventBus.emit({
+      type: AgentEventType.ARTIFACT_REQUESTED,
+      agentId: toAgentId,
+      workspaceId,
+      data: {
+        requestId: request.id,
+        fromAgentId,
+        artifactType,
+        taskId,
+        context,
+      },
+      timestamp: new Date(),
+    });
+
+    return successResult({
+      requestId: request.id,
+      status: "pending",
+      artifactType,
+      taskId,
+      toAgentId,
+    });
+  }
+
+  // ─── Tool 14: Provide Artifact ─────────────────────────────────────────
+
+  /**
+   * Provide an artifact (screenshot, test results, etc.).
+   * Can be in response to a request or proactively provided.
+   */
+  async provideArtifact(params: {
+    agentId: string;
+    type: ArtifactType;
+    taskId: string;
+    workspaceId: string;
+    content: string;
+    context?: string;
+    requestId?: string;
+    metadata?: Record<string, string>;
+  }): Promise<ToolResult> {
+    if (!this.artifactStore) {
+      return errorResult("Artifact store not configured");
+    }
+
+    const { agentId, type, taskId, workspaceId, content, context, requestId, metadata } = params;
+
+    // Create artifact
+    const artifact = createArtifact({
+      id: uuidv4(),
+      type,
+      taskId,
+      workspaceId,
+      providedByAgentId: agentId,
+      requestId,
+      content,
+      context,
+      status: "provided",
+      metadata,
+    });
+
+    await this.artifactStore.saveArtifact(artifact);
+
+    // If fulfilling a request, update the request status
+    if (requestId) {
+      const request = await this.artifactStore.getRequest(requestId);
+      if (request) {
+        await this.artifactStore.updateRequestStatus(requestId, "fulfilled", artifact.id);
+        artifact.requestedByAgentId = request.fromAgentId;
+        await this.artifactStore.saveArtifact(artifact);
+      }
+    }
+
+    // Emit event
+    this.eventBus.emit({
+      type: AgentEventType.ARTIFACT_PROVIDED,
+      agentId,
+      workspaceId,
+      data: {
+        artifactId: artifact.id,
+        type,
+        taskId,
+        requestId,
+        contentLength: content.length,
+      },
+      timestamp: new Date(),
+    });
+
+    return successResult({
+      artifactId: artifact.id,
+      type,
+      taskId,
+      status: "provided",
+    });
+  }
+
+  // ─── Tool 15: List Artifacts ─────────────────────────────────────────────
+
+  /**
+   * List artifacts for a task.
+   */
+  async listArtifacts(params: {
+    taskId: string;
+    type?: ArtifactType;
+  }): Promise<ToolResult> {
+    if (!this.artifactStore) {
+      return errorResult("Artifact store not configured");
+    }
+
+    const { taskId, type } = params;
+
+    const artifacts = type
+      ? await this.artifactStore.listByTaskAndType(taskId, type)
+      : await this.artifactStore.listByTask(taskId);
+
+    return successResult({
+      artifacts: artifacts.map((a) => ({
+        id: a.id,
+        type: a.type,
+        taskId: a.taskId,
+        providedByAgentId: a.providedByAgentId,
+        status: a.status,
+        context: a.context,
+        contentLength: a.content?.length ?? 0,
+        createdAt: a.createdAt.toISOString(),
+      })),
+    });
+  }
+
+  // ─── Tool 16: Get Artifact ─────────────────────────────────────────────
+
+  /**
+   * Get a specific artifact by ID.
+   */
+  async getArtifact(artifactId: string): Promise<ToolResult> {
+    if (!this.artifactStore) {
+      return errorResult("Artifact store not configured");
+    }
+
+    const artifact = await this.artifactStore.getArtifact(artifactId);
+    if (!artifact) {
+      return errorResult(`Artifact not found: ${artifactId}`);
+    }
+
+    return successResult({
+      id: artifact.id,
+      type: artifact.type,
+      taskId: artifact.taskId,
+      providedByAgentId: artifact.providedByAgentId,
+      requestedByAgentId: artifact.requestedByAgentId,
+      status: artifact.status,
+      content: artifact.content,
+      context: artifact.context,
+      metadata: artifact.metadata,
+      createdAt: artifact.createdAt.toISOString(),
+    });
+  }
+
+  // ─── Tool 17: List Pending Artifact Requests ─────────────────────────────
+
+  /**
+   * List pending artifact requests for an agent.
+   */
+  async listPendingArtifactRequests(agentId: string): Promise<ToolResult> {
+    if (!this.artifactStore) {
+      return errorResult("Artifact store not configured");
+    }
+
+    const requests = await this.artifactStore.listPendingRequests(agentId);
+
+    return successResult({
+      requests: requests.map((r) => ({
+        id: r.id,
+        fromAgentId: r.fromAgentId,
+        artifactType: r.artifactType,
+        taskId: r.taskId,
+        context: r.context,
+        status: r.status,
+        createdAt: r.createdAt.toISOString(),
+      })),
+    });
+  }
+
+  // ─── Tool 18: Capture Screenshot ────────────────────────────────────────────
+
+  /**
+   * Capture a screenshot using agent-browser and store it as an artifact.
+   * This is a convenience tool that combines browser screenshot capture with artifact storage.
+   */
+  async captureScreenshot(params: {
+    agentId: string;
+    taskId: string;
+    workspaceId: string;
+    url?: string;
+    fullPage?: boolean;
+    annotate?: boolean;
+    context?: string;
+    outputPath?: string;
+  }): Promise<ToolResult> {
+    if (!this.artifactStore) {
+      return errorResult("Artifact store not configured");
+    }
+
+    const { agentId, taskId, workspaceId, url, fullPage, annotate, context, outputPath } = params;
+
+    try {
+      // Build agent-browser command
+      const commands: string[] = [];
+
+      if (url) {
+        commands.push(`agent-browser open "${url}"`);
+        commands.push("agent-browser wait --load networkidle");
+      }
+
+      // Build screenshot command
+      let screenshotCmd = "agent-browser screenshot";
+      if (fullPage) {
+        screenshotCmd += " --full";
+      }
+      if (annotate) {
+        screenshotCmd += " --annotate";
+      }
+      if (outputPath) {
+        screenshotCmd += ` "${outputPath}"`;
+      }
+      commands.push(screenshotCmd);
+
+      const fullCommand = commands.join(" && ");
+
+      // Execute via child_process
+      const { exec } = await import("child_process");
+      const { promisify } = await import("util");
+      const execAsync = promisify(exec);
+
+      const result = await execAsync(fullCommand, {
+        timeout: 60000, // 60 second timeout
+        cwd: process.cwd(),
+      });
+
+      // Parse output to get screenshot path
+      const output = result.stdout.trim();
+      const stderrOutput = result.stderr?.trim();
+
+      // Read the screenshot file if path is available
+      let screenshotContent = "";
+      let screenshotPath = outputPath;
+
+      // Try to extract path from output if not specified
+      if (!screenshotPath) {
+        const pathMatch = output.match(/(?:Saved|Screenshot).*?([\/\w\-\.]+\.png)/i);
+        if (pathMatch) {
+          screenshotPath = pathMatch[1];
+        }
+      }
+
+      // Read file and convert to base64 if we have a path
+      if (screenshotPath) {
+        try {
+          const fs = await import("fs/promises");
+          const buffer = await fs.readFile(screenshotPath);
+          screenshotContent = buffer.toString("base64");
+        } catch {
+          // File might not exist or be readable
+          screenshotContent = `Screenshot captured at: ${screenshotPath}`;
+        }
+      }
+
+      // Store as artifact
+      const artifact = createArtifact({
+        id: uuidv4(),
+        type: "screenshot",
+        taskId,
+        workspaceId,
+        providedByAgentId: agentId,
+        content: screenshotContent || output,
+        context: context || `Screenshot${url ? ` of ${url}` : ""}${fullPage ? " (full page)" : ""}`,
+        status: "provided",
+        metadata: {
+          url: url || "",
+          fullPage: String(fullPage ?? false),
+          annotate: String(annotate ?? false),
+          path: screenshotPath || "",
+        },
+      });
+
+      await this.artifactStore.saveArtifact(artifact);
+
+      // Emit event
+      this.eventBus.emit({
+        type: AgentEventType.ARTIFACT_PROVIDED,
+        agentId,
+        workspaceId,
+        data: {
+          artifactId: artifact.id,
+          type: "screenshot",
+          taskId,
+          url,
+        },
+        timestamp: new Date(),
+      });
+
+      return successResult({
+        artifactId: artifact.id,
+        type: "screenshot",
+        taskId,
+        path: screenshotPath,
+        output,
+        stderr: stderrOutput,
+      });
+    } catch (err) {
+      const error = err as Error;
+      return errorResult(`Screenshot capture failed: ${error.message}`);
+    }
   }
 }

@@ -5,6 +5,7 @@ export {
 } from "./conversation-store";
 export { type TaskStore, InMemoryTaskStore } from "./task-store";
 export { type NoteStore, InMemoryNoteStore } from "./note-store";
+export { type ArtifactStore, InMemoryArtifactStore } from "./artifact-store";
 export {
   type WorkspaceStore,
   InMemoryWorkspaceStore,

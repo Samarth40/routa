@@ -13,14 +13,17 @@
 import { v4 as uuidv4 } from "uuid";
 import { KanbanBoardStore } from "../store/kanban-board-store";
 import { TaskStore } from "../store/task-store";
+import { ArtifactStore } from "../store/artifact-store";
 import { createKanbanBoard, KanbanColumn, columnIdToTaskStatus } from "../models/kanban";
 import { createTask, Task, TaskPriority } from "../models/task";
+import { ArtifactType } from "../models/artifact";
 import { ToolResult, successResult, errorResult } from "./tool-result";
 import { EventBus } from "../events/event-bus";
 import { emitColumnTransition } from "../kanban/column-transition";
 
 export class KanbanTools {
   private eventBus?: EventBus;
+  private artifactStore?: ArtifactStore;
 
   constructor(
     private kanbanBoardStore: KanbanBoardStore,
@@ -30,6 +33,11 @@ export class KanbanTools {
   /** Set the event bus for emitting column transition events */
   setEventBus(eventBus: EventBus): void {
     this.eventBus = eventBus;
+  }
+
+  /** Set the artifact store for checking required artifacts */
+  setArtifactStore(artifactStore: ArtifactStore): void {
+    this.artifactStore = artifactStore;
   }
 
   // ─── Board Operations ───────────────────────────────────────────────────
@@ -171,6 +179,27 @@ export class KanbanTools {
 
     const fromColumnId = task.columnId ?? "backlog";
     const fromColumn = board.columns.find((c) => c.id === fromColumnId);
+
+    // Check required artifacts before allowing transition
+    const requiredArtifacts = targetColumn.automation?.requiredArtifacts;
+    if (requiredArtifacts && requiredArtifacts.length > 0 && this.artifactStore) {
+      const missingArtifacts: string[] = [];
+      for (const artifactType of requiredArtifacts) {
+        const artifacts = await this.artifactStore.listByTaskAndType(
+          task.id,
+          artifactType as ArtifactType
+        );
+        if (artifacts.length === 0) {
+          missingArtifacts.push(artifactType);
+        }
+      }
+      if (missingArtifacts.length > 0) {
+        return errorResult(
+          `Cannot move card to "${targetColumn.name}": missing required artifacts: ${missingArtifacts.join(", ")}. ` +
+          `Please provide these artifacts before moving the card.`
+        );
+      }
+    }
 
     task.columnId = params.targetColumnId;
     task.status = columnIdToTaskStatus(params.targetColumnId);

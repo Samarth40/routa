@@ -22,6 +22,10 @@ export enum AgentEventType {
   WORKSPACE_UPDATED = "WORKSPACE_UPDATED",
   /** Emitted when a Kanban card moves between columns */
   COLUMN_TRANSITION = "COLUMN_TRANSITION",
+  /** Emitted when an agent requests an artifact from another agent */
+  ARTIFACT_REQUESTED = "ARTIFACT_REQUESTED",
+  /** Emitted when an agent provides an artifact */
+  ARTIFACT_PROVIDED = "ARTIFACT_PROVIDED",
 }
 
 export interface AgentEvent {

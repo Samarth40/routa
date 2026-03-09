@@ -451,3 +451,57 @@ export const specialists = sqliteTable("specialists", {
   /** Last update timestamp */
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
 });
+
+// ─── Artifacts (agent-to-agent communication) ───────────────────────────
+
+export const artifacts = sqliteTable("artifacts", {
+  id: text("id").primaryKey(),
+  /** Type: screenshot | test_results | code_diff | logs */
+  type: text("type").notNull(),
+  /** Task this artifact is associated with */
+  taskId: text("task_id").notNull(),
+  /** Workspace ID */
+  workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  /** Agent that provided this artifact */
+  providedByAgentId: text("provided_by_agent_id"),
+  /** Agent that requested this artifact */
+  requestedByAgentId: text("requested_by_agent_id"),
+  /** Request ID if this artifact fulfills a request */
+  requestId: text("request_id"),
+  /** Content (base64 for images, text for others) */
+  content: text("content"),
+  /** Context or description */
+  context: text("context"),
+  /** Status: pending | provided | expired */
+  status: text("status").notNull().default("pending"),
+  /** Expiration timestamp */
+  expiresAt: integer("expires_at", { mode: "timestamp_ms" }),
+  /** Additional metadata */
+  metadata: text("metadata", { mode: "json" }).$type<Record<string, string>>(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+
+// ─── Artifact Requests (pending artifact requests) ───────────────────────
+
+export const artifactRequests = sqliteTable("artifact_requests", {
+  id: text("id").primaryKey(),
+  /** Agent requesting the artifact */
+  fromAgentId: text("from_agent_id").notNull(),
+  /** Agent that should provide the artifact */
+  toAgentId: text("to_agent_id").notNull(),
+  /** Type of artifact requested */
+  artifactType: text("artifact_type").notNull(),
+  /** Task this request is for */
+  taskId: text("task_id").notNull(),
+  /** Workspace ID */
+  workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  /** Context for the request */
+  context: text("context"),
+  /** Status: pending | fulfilled | rejected | expired */
+  status: text("status").notNull().default("pending"),
+  /** ID of artifact that fulfilled this request */
+  artifactId: text("artifact_id"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
