@@ -23,6 +23,7 @@ use crate::models::agent::{AgentRole, AgentStatus, ModelTier};
 use crate::models::task::TaskStatus;
 use crate::store::{AgentStore, TaskStore};
 use crate::tools::{CompletionReport, ToolResult};
+use crate::workflow::specialist::{SpecialistDef, SpecialistLoader};
 
 // ─── Specialist Configuration ─────────────────────────────────────────────
 
@@ -98,6 +99,62 @@ impl SpecialistConfig {
             "developer" => Some(Self::developer()),
             _ => None,
         }
+    }
+
+    pub fn from_specialist_def(def: SpecialistDef) -> Option<Self> {
+        let role_name = def.role.to_ascii_uppercase();
+        let role = AgentRole::from_str(&role_name)?;
+        let model_tier = match def.model_tier.to_ascii_uppercase().as_str() {
+            "FAST" => ModelTier::Fast,
+            "BALANCED" => ModelTier::Balanced,
+            _ => ModelTier::Smart,
+        };
+
+        Some(Self {
+            id: def.id,
+            name: def.name,
+            description: def.description,
+            role,
+            default_model_tier: model_tier,
+            system_prompt: def.system_prompt,
+            role_reminder: def.role_reminder.unwrap_or_default(),
+        })
+    }
+
+    pub fn list_available() -> Vec<Self> {
+        let mut specialists = HashMap::new();
+
+        for specialist in [Self::developer(), Self::crafter(), Self::gate()] {
+            specialists.insert(specialist.id.clone(), specialist);
+        }
+
+        let mut loader = SpecialistLoader::new();
+        loader.load_default_dirs();
+
+        for specialist in loader
+            .all()
+            .values()
+            .cloned()
+            .filter_map(Self::from_specialist_def)
+        {
+            specialists.insert(specialist.id.clone(), specialist);
+        }
+
+        let mut values: Vec<_> = specialists.into_values().collect();
+        values.sort_by(|left, right| left.id.cmp(&right.id));
+        values
+    }
+
+    pub fn resolve(input: &str) -> Option<Self> {
+        if let Some(role) = AgentRole::from_str(input) {
+            return Self::by_role(&role);
+        }
+
+        let target = input.to_lowercase();
+
+        Self::list_available()
+            .into_iter()
+            .find(|specialist| specialist.id == target)
     }
 }
 
@@ -343,7 +400,9 @@ impl RoutaOrchestrator {
             }
         });
 
-        let cwd = params.cwd.unwrap_or_else(|| self.config.default_cwd.clone());
+        let cwd = params
+            .cwd
+            .unwrap_or_else(|| self.config.default_cwd.clone());
 
         // 4. Create agent record
         let agent_id = uuid::Uuid::new_v4().to_string();
@@ -426,7 +485,11 @@ impl RoutaOrchestrator {
         };
 
         // Send the initial prompt
-        if let Err(e) = self.acp_manager.prompt(&child_session_id, &delegation_prompt).await {
+        if let Err(e) = self
+            .acp_manager
+            .prompt(&child_session_id, &delegation_prompt)
+            .await
+        {
             tracing::error!(
                 "[Orchestrator] Failed to send initial prompt to agent {}: {}",
                 agent_id,
@@ -570,7 +633,8 @@ impl RoutaOrchestrator {
             .await?;
 
         // Handle completion (check groups or wake parent)
-        self.handle_child_completion(child_agent_id, &record).await?;
+        self.handle_child_completion(child_agent_id, &record)
+            .await?;
 
         Ok(())
     }
@@ -651,7 +715,10 @@ impl RoutaOrchestrator {
              **Status:** {:?}\n\
              {}\n\
              Review the results and decide next steps.",
-            agent.as_ref().map(|a| a.name.as_str()).unwrap_or(child_agent_id),
+            agent
+                .as_ref()
+                .map(|a| a.name.as_str())
+                .unwrap_or(child_agent_id),
             child_agent_id,
             task.as_ref().map(|t| t.title.as_str()).unwrap_or(task_id),
             task.as_ref().map(|t| &t.status),
@@ -661,7 +728,11 @@ impl RoutaOrchestrator {
                 .unwrap_or_default()
         );
 
-        if let Err(e) = self.acp_manager.prompt(parent_session_id, &wake_message).await {
+        if let Err(e) = self
+            .acp_manager
+            .prompt(parent_session_id, &wake_message)
+            .await
+        {
             tracing::error!(
                 "[Orchestrator] Failed to wake parent session {}: {}",
                 parent_session_id,
@@ -683,7 +754,11 @@ impl RoutaOrchestrator {
             Review the results and decide next steps.\n\
             You may want to delegate a GATE (verifier) agent to validate the work.";
 
-        if let Err(e) = self.acp_manager.prompt(parent_session_id, wake_message).await {
+        if let Err(e) = self
+            .acp_manager
+            .prompt(parent_session_id, wake_message)
+            .await
+        {
             tracing::error!(
                 "[Orchestrator] Failed to wake parent session {}: {}",
                 parent_session_id,
@@ -696,12 +771,7 @@ impl RoutaOrchestrator {
 
     /// Resolve specialist config from a string (role name or specialist ID).
     fn resolve_specialist(&self, input: &str) -> Option<SpecialistConfig> {
-        // Try by role name (e.g., "CRAFTER", "GATE")
-        if let Some(role) = AgentRole::from_str(input) {
-            return SpecialistConfig::by_role(&role);
-        }
-        // Try by specialist ID (e.g., "crafter", "gate")
-        SpecialistConfig::by_id(input)
+        SpecialistConfig::resolve(input)
     }
 
     /// Clean up resources for a session.
@@ -764,7 +834,10 @@ fn build_delegation_prompt(
         }
     }
 
-    prompt.push_str(&format!("\n---\n**Reminder:** {}\n", specialist.role_reminder));
+    prompt.push_str(&format!(
+        "\n---\n**Reminder:** {}\n",
+        specialist.role_reminder
+    ));
 
     if let Some(ctx) = additional_context {
         prompt.push_str(&format!("\n**Additional Context:** {}\n", ctx));
@@ -774,4 +847,3 @@ fn build_delegation_prompt(
 
     prompt
 }
-

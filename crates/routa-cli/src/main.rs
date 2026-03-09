@@ -9,7 +9,11 @@ use clap::{Parser, Subcommand};
 
 /// Routa.js CLI — Multi-agent coordination platform
 #[derive(Parser)]
-#[command(name = "routa", version, about = "Routa.js CLI — Multi-agent coordination platform")]
+#[command(
+    name = "routa",
+    version,
+    about = "Routa.js CLI — Multi-agent coordination platform"
+)]
 pub struct Cli {
     /// Path to the SQLite database file
     #[arg(long, env = "ROUTA_DB_PATH", default_value = "routa.db")]
@@ -194,6 +198,24 @@ enum AgentAction {
         #[arg(long)]
         parent_id: Option<String>,
     },
+    /// Run a specialist agent for a one-off prompt
+    Run {
+        /// Specialist ID (for example: crafter, gate, view-git-change)
+        #[arg(long, short = 's')]
+        specialist: Option<String>,
+        /// Prompt to send to the specialist. Supports `@specialist prompt`.
+        #[arg(long, short = 'p')]
+        prompt: Option<String>,
+        /// Workspace ID
+        #[arg(long, short = 'w', default_value = "default")]
+        workspace_id: String,
+        /// ACP provider to use (for example: opencode)
+        #[arg(long, default_value = "opencode")]
+        provider: String,
+        /// Extra specialist definitions directory
+        #[arg(long, short = 'd')]
+        specialist_dir: Option<String>,
+    },
     /// Get agent status
     Status {
         /// Agent ID
@@ -327,197 +349,221 @@ async fn main() {
         commands::prompt::run(&state, &prompt_text, &cli.workspace_id, &cli.provider).await
     } else if let Some(command) = cli.command {
         match command {
-        Commands::Server {
-            host,
-            port,
-            static_dir,
-        } => commands::server::run(host, port, cli.db, static_dir).await,
+            Commands::Server {
+                host,
+                port,
+                static_dir,
+            } => commands::server::run(host, port, cli.db, static_dir).await,
 
-        Commands::Acp { action } => {
-            match action {
-                AcpAction::Serve { workspace_id, provider } => {
-                    // Resolve full shell PATH so child processes can be found
-                    let full_path = routa_core::shell_env::full_path();
-                    std::env::set_var("PATH", full_path);
-                    let state = commands::init_state(&cli.db).await;
-                    commands::acp_serve::run(&state, &workspace_id, &provider).await
-                }
-                AcpAction::Install { agent_id, dist } => {
-                    let state = commands::init_state(&cli.db).await;
-                    commands::acp::install(&state, &agent_id, dist.as_deref()).await
-                }
-                AcpAction::Uninstall { agent_id } => {
-                    let state = commands::init_state(&cli.db).await;
-                    commands::acp::uninstall(&state, &agent_id).await
-                }
-                AcpAction::List => {
-                    let state = commands::init_state(&cli.db).await;
-                    commands::acp::list(&state).await
-                }
-                AcpAction::Installed => {
-                    let state = commands::init_state(&cli.db).await;
-                    commands::acp::list_installed(&state).await
-                }
-                AcpAction::RuntimeStatus => {
-                    let state = commands::init_state(&cli.db).await;
-                    commands::acp::runtime_status(&state).await
-                }
-                AcpAction::EnsureNode => {
-                    let state = commands::init_state(&cli.db).await;
-                    commands::acp::ensure_node(&state).await
-                }
-                AcpAction::EnsureUv => {
-                    let state = commands::init_state(&cli.db).await;
-                    commands::acp::ensure_uv(&state).await
+            Commands::Acp { action } => {
+                match action {
+                    AcpAction::Serve {
+                        workspace_id,
+                        provider,
+                    } => {
+                        // Resolve full shell PATH so child processes can be found
+                        let full_path = routa_core::shell_env::full_path();
+                        std::env::set_var("PATH", full_path);
+                        let state = commands::init_state(&cli.db).await;
+                        commands::acp_serve::run(&state, &workspace_id, &provider).await
+                    }
+                    AcpAction::Install { agent_id, dist } => {
+                        let state = commands::init_state(&cli.db).await;
+                        commands::acp::install(&state, &agent_id, dist.as_deref()).await
+                    }
+                    AcpAction::Uninstall { agent_id } => {
+                        let state = commands::init_state(&cli.db).await;
+                        commands::acp::uninstall(&state, &agent_id).await
+                    }
+                    AcpAction::List => {
+                        let state = commands::init_state(&cli.db).await;
+                        commands::acp::list(&state).await
+                    }
+                    AcpAction::Installed => {
+                        let state = commands::init_state(&cli.db).await;
+                        commands::acp::list_installed(&state).await
+                    }
+                    AcpAction::RuntimeStatus => {
+                        let state = commands::init_state(&cli.db).await;
+                        commands::acp::runtime_status(&state).await
+                    }
+                    AcpAction::EnsureNode => {
+                        let state = commands::init_state(&cli.db).await;
+                        commands::acp::ensure_node(&state).await
+                    }
+                    AcpAction::EnsureUv => {
+                        let state = commands::init_state(&cli.db).await;
+                        commands::acp::ensure_uv(&state).await
+                    }
                 }
             }
-        }
 
-        Commands::Agent { action } => {
-            let state = commands::init_state(&cli.db).await;
-            match action {
-                AgentAction::List { workspace_id } => {
-                    commands::agent::list(&state, &workspace_id).await
-                }
-                AgentAction::Create {
-                    name,
-                    role,
-                    workspace_id,
-                    parent_id,
-                } => {
-                    commands::agent::create(&state, &name, &role, &workspace_id, parent_id.as_deref())
+            Commands::Agent { action } => {
+                let state = commands::init_state(&cli.db).await;
+                match action {
+                    AgentAction::List { workspace_id } => {
+                        commands::agent::list(&state, &workspace_id).await
+                    }
+                    AgentAction::Create {
+                        name,
+                        role,
+                        workspace_id,
+                        parent_id,
+                    } => {
+                        commands::agent::create(
+                            &state,
+                            &name,
+                            &role,
+                            &workspace_id,
+                            parent_id.as_deref(),
+                        )
                         .await
+                    }
+                    AgentAction::Run {
+                        specialist,
+                        prompt,
+                        workspace_id,
+                        provider,
+                        specialist_dir,
+                    } => {
+                        commands::agent::run(
+                            &state,
+                            specialist.as_deref(),
+                            prompt.as_deref(),
+                            &workspace_id,
+                            &provider,
+                            specialist_dir.as_deref(),
+                        )
+                        .await
+                    }
+                    AgentAction::Status { id } => commands::agent::status(&state, &id).await,
+                    AgentAction::Summary { id } => commands::agent::summary(&state, &id).await,
                 }
-                AgentAction::Status { id } => commands::agent::status(&state, &id).await,
-                AgentAction::Summary { id } => commands::agent::summary(&state, &id).await,
             }
-        }
 
-        Commands::Task { action } => {
-            let state = commands::init_state(&cli.db).await;
-            match action {
-                TaskAction::List { workspace_id } => {
-                    commands::task::list(&state, &workspace_id).await
-                }
-                TaskAction::Create {
-                    title,
-                    objective,
-                    workspace_id,
-                    scope,
-                    acceptance_criteria,
-                } => {
-                    commands::task::create(
-                        &state,
-                        &title,
-                        &objective,
-                        &workspace_id,
-                        scope.as_deref(),
+            Commands::Task { action } => {
+                let state = commands::init_state(&cli.db).await;
+                match action {
+                    TaskAction::List { workspace_id } => {
+                        commands::task::list(&state, &workspace_id).await
+                    }
+                    TaskAction::Create {
+                        title,
+                        objective,
+                        workspace_id,
+                        scope,
                         acceptance_criteria,
-                    )
-                    .await
-                }
-                TaskAction::Get { id } => commands::task::get(&state, &id).await,
-                TaskAction::UpdateStatus {
-                    id,
-                    status,
-                    agent_id,
-                    summary,
-                } => {
-                    commands::task::update_status(
-                        &state,
-                        &id,
-                        &status,
-                        &agent_id,
-                        summary.as_deref(),
-                    )
-                    .await
+                    } => {
+                        commands::task::create(
+                            &state,
+                            &title,
+                            &objective,
+                            &workspace_id,
+                            scope.as_deref(),
+                            acceptance_criteria,
+                        )
+                        .await
+                    }
+                    TaskAction::Get { id } => commands::task::get(&state, &id).await,
+                    TaskAction::UpdateStatus {
+                        id,
+                        status,
+                        agent_id,
+                        summary,
+                    } => {
+                        commands::task::update_status(
+                            &state,
+                            &id,
+                            &status,
+                            &agent_id,
+                            summary.as_deref(),
+                        )
+                        .await
+                    }
                 }
             }
-        }
 
-        Commands::Workspace { action } => {
-            let state = commands::init_state(&cli.db).await;
-            match action {
-                WorkspaceAction::List => commands::workspace::list(&state).await,
-                WorkspaceAction::Create { name } => {
-                    commands::workspace::create(&state, &name).await
+            Commands::Workspace { action } => {
+                let state = commands::init_state(&cli.db).await;
+                match action {
+                    WorkspaceAction::List => commands::workspace::list(&state).await,
+                    WorkspaceAction::Create { name } => {
+                        commands::workspace::create(&state, &name).await
+                    }
                 }
             }
-        }
 
-        Commands::Skill { action } => {
-            let state = commands::init_state(&cli.db).await;
-            match action {
-                SkillAction::List => commands::skill::list(&state).await,
-                SkillAction::Reload => commands::skill::reload(&state).await,
+            Commands::Skill { action } => {
+                let state = commands::init_state(&cli.db).await;
+                match action {
+                    SkillAction::List => commands::skill::list(&state).await,
+                    SkillAction::Reload => commands::skill::reload(&state).await,
+                }
             }
-        }
 
-        Commands::Rpc { method, params } => {
-            let state = commands::init_state(&cli.db).await;
-            commands::rpc::call(&state, &method, &params).await
-        }
+            Commands::Rpc { method, params } => {
+                let state = commands::init_state(&cli.db).await;
+                commands::rpc::call(&state, &method, &params).await
+            }
 
-        Commands::Delegate {
-            task_id,
-            caller_agent_id,
-            caller_session_id,
-            workspace_id,
-            specialist,
-            provider,
-            cwd,
-            wait_mode,
-        } => {
-            let state = commands::init_state(&cli.db).await;
-            commands::delegate::run(
-                &state,
-                &task_id,
-                &caller_agent_id,
-                &caller_session_id,
-                &workspace_id,
-                &specialist,
-                provider.as_deref(),
-                cwd.as_deref(),
-                &wait_mode,
-            )
-            .await
-        }
+            Commands::Delegate {
+                task_id,
+                caller_agent_id,
+                caller_session_id,
+                workspace_id,
+                specialist,
+                provider,
+                cwd,
+                wait_mode,
+            } => {
+                let state = commands::init_state(&cli.db).await;
+                commands::delegate::run(
+                    &state,
+                    &task_id,
+                    &caller_agent_id,
+                    &caller_session_id,
+                    &workspace_id,
+                    &specialist,
+                    provider.as_deref(),
+                    cwd.as_deref(),
+                    &wait_mode,
+                )
+                .await
+            }
 
-        Commands::Chat {
-            workspace_id,
-            provider,
-            role,
-        } => {
-            let state = commands::init_state(&cli.db).await;
-            commands::chat::run(&state, &workspace_id, &provider, &role).await
-        }
+            Commands::Chat {
+                workspace_id,
+                provider,
+                role,
+            } => {
+                let state = commands::init_state(&cli.db).await;
+                commands::chat::run(&state, &workspace_id, &provider, &role).await
+            }
 
-        Commands::Workflow { action } => {
-            let state = commands::init_state(&cli.db).await;
-            match action {
-                WorkflowAction::Run {
-                    file,
-                    verbose,
-                    specialist_dir,
-                    trigger_payload,
-                } => {
-                    commands::workflow::run(
-                        &state,
-                        &file,
+            Commands::Workflow { action } => {
+                let state = commands::init_state(&cli.db).await;
+                match action {
+                    WorkflowAction::Run {
+                        file,
                         verbose,
-                        specialist_dir.as_deref(),
-                        trigger_payload.as_deref(),
-                    )
-                    .await
-                }
-                WorkflowAction::Validate { file } => {
-                    commands::workflow::validate(&file).await
-                }
-                WorkflowAction::Specialists { specialist_dir } => {
-                    commands::workflow::list_specialists(specialist_dir.as_deref()).await
+                        specialist_dir,
+                        trigger_payload,
+                    } => {
+                        commands::workflow::run(
+                            &state,
+                            &file,
+                            verbose,
+                            specialist_dir.as_deref(),
+                            trigger_payload.as_deref(),
+                        )
+                        .await
+                    }
+                    WorkflowAction::Validate { file } => commands::workflow::validate(&file).await,
+                    WorkflowAction::Specialists { specialist_dir } => {
+                        commands::workflow::list_specialists(specialist_dir.as_deref()).await
+                    }
                 }
             }
-        }
         }
     } else {
         // No prompt and no subcommand — show help

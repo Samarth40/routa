@@ -17,7 +17,7 @@
 //! ```
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -73,8 +73,7 @@ fn default_model_tier() -> String {
 impl SpecialistDef {
     /// Parse a specialist definition from a YAML string.
     pub fn from_yaml(yaml: &str) -> Result<Self, String> {
-        serde_yaml::from_str(yaml)
-            .map_err(|e| format!("Failed to parse specialist YAML: {}", e))
+        serde_yaml::from_str(yaml).map_err(|e| format!("Failed to parse specialist YAML: {}", e))
     }
 
     /// Load a specialist definition from a YAML file.
@@ -178,7 +177,11 @@ impl SpecialistLoader {
                 _ => continue,
             };
 
-            tracing::info!("[SpecialistLoader] Loaded specialist: {} ({})", specialist.id, specialist.name);
+            tracing::info!(
+                "[SpecialistLoader] Loaded specialist: {} ({})",
+                specialist.id,
+                specialist.name
+            );
             self.specialists.insert(specialist.id.clone(), specialist);
             count += 1;
         }
@@ -188,7 +191,9 @@ impl SpecialistLoader {
 
     /// Get a specialist by ID.
     pub fn get(&self, id: &str) -> Option<&SpecialistDef> {
-        self.specialists.get(id)
+        self.specialists
+            .get(id)
+            .or_else(|| self.specialists.get(&id.to_lowercase()))
     }
 
     /// Get all loaded specialists.
@@ -201,28 +206,45 @@ impl SpecialistLoader {
     pub fn load_default_dirs(&mut self) -> usize {
         let mut total = 0;
 
-        // Default search paths
-        let search_paths = vec![
-            "specialists",
-            "resources/specialists",
-            "../resources/specialists",
-        ];
-
-        for dir in &search_paths {
-            if Path::new(dir).is_dir() {
-                match self.load_dir(dir) {
+        for dir in Self::default_search_paths() {
+            if dir.is_dir() {
+                let dir_str = dir.to_string_lossy().to_string();
+                match self.load_dir(&dir_str) {
                     Ok(n) => {
-                        tracing::info!("[SpecialistLoader] Loaded {} specialists from '{}'", n, dir);
+                        tracing::info!(
+                            "[SpecialistLoader] Loaded {} specialists from '{}'",
+                            n,
+                            dir_str
+                        );
                         total += n;
                     }
                     Err(e) => {
-                        tracing::warn!("[SpecialistLoader] Failed to load from '{}': {}", dir, e);
+                        tracing::warn!(
+                            "[SpecialistLoader] Failed to load from '{}': {}",
+                            dir_str,
+                            e
+                        );
                     }
                 }
             }
         }
 
         total
+    }
+
+    /// Default search paths in precedence order.
+    pub fn default_search_paths() -> Vec<PathBuf> {
+        let mut search_paths = Vec::new();
+
+        if let Some(home_dir) = dirs::home_dir() {
+            search_paths.push(home_dir.join(".routa").join("specialists"));
+        }
+
+        search_paths.push(PathBuf::from("specialists"));
+        search_paths.push(PathBuf::from("resources/specialists"));
+        search_paths.push(PathBuf::from("../resources/specialists"));
+
+        search_paths
     }
 
     /// Get built-in fallback specialists (hardcoded, no files needed).
@@ -319,5 +341,16 @@ role_reminder: "Stay on test."
         assert!(builtins.iter().any(|s| s.id == "crafter"));
         assert!(builtins.iter().any(|s| s.id == "gate"));
         assert!(builtins.iter().any(|s| s.id == "issue-refiner"));
+    }
+
+    #[test]
+    fn test_default_search_paths_include_workspace_and_user_dir() {
+        let search_paths = SpecialistLoader::default_search_paths();
+        assert!(search_paths
+            .iter()
+            .any(|path| path == Path::new("specialists")));
+        assert!(search_paths
+            .iter()
+            .any(|path| path == Path::new("resources/specialists")));
     }
 }

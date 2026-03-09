@@ -7,8 +7,8 @@
 //!   - `routa acp installed` — list locally installed agents
 //!   - `routa acp runtime status` — show Node.js / uv runtime health
 
-use routa_core::acp::runtime_manager::{RuntimeType, current_platform};
-use routa_core::acp::{AcpPaths, DistributionType, fetch_registry_json};
+use routa_core::acp::runtime_manager::{current_platform, RuntimeType};
+use routa_core::acp::{fetch_registry_json, AcpPaths, DistributionType};
 use routa_core::state::AppState;
 
 use super::print_json;
@@ -32,7 +32,10 @@ pub async fn install(
     let registry_json = fetch_registry_json().await?;
     let agent = find_agent(&registry_json, agent_id)?;
 
-    let name = agent.get("name").and_then(|v| v.as_str()).unwrap_or(agent_id);
+    let name = agent
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or(agent_id);
     let version = agent
         .get("version")
         .and_then(|v| v.as_str())
@@ -51,7 +54,10 @@ pub async fn install(
         choose_dist_type(&dist)
     };
 
-    println!("[acp install] Installing '{}' v{} via {}", name, version, dist_type);
+    println!(
+        "[acp install] Installing '{}' v{} via {}",
+        name, version, dist_type
+    );
 
     match dist_type.as_str() {
         "npx" => {
@@ -64,7 +70,10 @@ pub async fn install(
             install_binary(state, agent_id, name, &version, &dist).await?;
         }
         other => {
-            return Err(format!("Unknown distribution type '{}'. Use npx, uvx, or binary.", other));
+            return Err(format!(
+                "Unknown distribution type '{}'. Use npx, uvx, or binary.",
+                other
+            ));
         }
     }
 
@@ -83,7 +92,11 @@ pub async fn install(
 pub async fn uninstall(state: &AppState, agent_id: &str) -> Result<(), String> {
     println!("[acp uninstall] Removing '{}'…", agent_id);
 
-    if let Some(info) = state.acp_installation_state.get_installed_info(agent_id).await {
+    if let Some(info) = state
+        .acp_installation_state
+        .get_installed_info(agent_id)
+        .await
+    {
         if info.dist_type == DistributionType::Binary {
             state
                 .acp_binary_manager
@@ -128,10 +141,7 @@ pub async fn list(state: &AppState) -> Result<(), String> {
     let mut rows: Vec<serde_json::Value> = Vec::new();
     for agent in &agents {
         let id = agent.get("id").and_then(|v| v.as_str()).unwrap_or("");
-        let dist = agent
-            .get("distribution")
-            .cloned()
-            .unwrap_or_default();
+        let dist = agent.get("distribution").cloned().unwrap_or_default();
         let installed = state.acp_installation_state.is_installed(id).await
             || quick_check_installed(&dist, npx_ok, uvx_ok);
 
@@ -167,7 +177,6 @@ pub async fn runtime_status(state: &AppState) -> Result<(), String> {
     let platform = current_platform();
 
     let check = |rt: RuntimeType| {
-        let rm = rm;
         async move {
             let managed = rm.get_managed_runtime(&rt).await;
             let system = rm.get_system_runtime(&rt);
@@ -300,7 +309,10 @@ async fn install_npx(
         .await
         .map_err(|e| format!("Failed to save state: {}", e))?;
 
-    println!("[acp install] '{}' installed (npx will fetch on first run)", name);
+    println!(
+        "[acp install] '{}' installed (npx will fetch on first run)",
+        name
+    );
     Ok(())
 }
 
@@ -331,7 +343,10 @@ async fn install_uvx(
         .await
         .map_err(|e| format!("Failed to save state: {}", e))?;
 
-    println!("[acp install] '{}' installed (uvx will fetch on first run)", name);
+    println!(
+        "[acp install] '{}' installed (uvx will fetch on first run)",
+        name
+    );
     Ok(())
 }
 
@@ -348,9 +363,8 @@ async fn install_binary(
         .and_then(|b| b.get(&platform))
         .ok_or_else(|| format!("No binary for platform '{}'", platform))?;
 
-    let binary_info: routa_core::acp::BinaryInfo =
-        serde_json::from_value(binary_config.clone())
-            .map_err(|e| format!("Invalid binary config: {}", e))?;
+    let binary_info: routa_core::acp::BinaryInfo = serde_json::from_value(binary_config.clone())
+        .map_err(|e| format!("Invalid binary config: {}", e))?;
 
     println!("[acp install] Downloading binary for '{}'…", name);
     let exe = state

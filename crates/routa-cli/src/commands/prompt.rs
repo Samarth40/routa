@@ -48,19 +48,20 @@ pub async fn run(
                     "jsonrpc": "2.0",
                     "id": 2,
                     "method": "workspaces.create",
-                    "params": { 
-                        "title": workspace_id 
+                    "params": {
+                        "title": workspace_id
                     }
                 }))
                 .await;
-            
+
             if let Some(err) = create_resp.get("error") {
-                let err_msg = err.get("message")
+                let err_msg = err
+                    .get("message")
                     .and_then(|m| m.as_str())
                     .unwrap_or("Unknown error");
                 return Err(format!("Failed to create workspace: {}", err_msg));
             }
-            
+
             // Get the created workspace ID
             let created_ws_id = create_resp
                 .get("result")
@@ -69,7 +70,7 @@ pub async fn run(
                 .and_then(|id| id.as_str())
                 .ok_or("Failed to get created workspace ID")?
                 .to_string();
-            
+
             println!("Created workspace: {}", created_ws_id);
             created_ws_id
         } else {
@@ -107,8 +108,8 @@ pub async fn run(
         .to_string();
 
     // ── 3. Build coordinator prompt ─────────────────────────────────────
-    let specialist = SpecialistConfig::by_role(&AgentRole::Routa)
-        .unwrap_or_else(SpecialistConfig::crafter);
+    let specialist =
+        SpecialistConfig::by_role(&AgentRole::Routa).unwrap_or_else(SpecialistConfig::crafter);
 
     let coordinator_prompt = format!(
         "{}\n\n---\n\n\
@@ -233,7 +234,7 @@ pub async fn run(
 }
 
 /// Handle a session/update notification and print to terminal.
-fn handle_session_update(update: &serde_json::Value) {
+pub(crate) fn handle_session_update(update: &serde_json::Value) {
     let params = match update.get("params") {
         Some(p) => p,
         None => return,
@@ -313,10 +314,7 @@ fn handle_session_update(update: &serde_json::Value) {
             }
         }
         "process_output" => {
-            let data = inner
-                .get("data")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let data = inner.get("data").and_then(|v| v.as_str()).unwrap_or("");
             if !data.is_empty() {
                 eprint!("\x1b[90m{}\x1b[0m", data); // gray
             }
@@ -328,7 +326,7 @@ fn handle_session_update(update: &serde_json::Value) {
 }
 
 /// Print a summary of agents and tasks after the session completes.
-async fn print_session_summary(router: &RpcRouter, workspace_id: &str) {
+pub(crate) async fn print_session_summary(router: &RpcRouter, workspace_id: &str) {
     println!("╔══════════════════════════════════════════════════════════╗");
     println!("║  Session Summary                                        ║");
     println!("╚══════════════════════════════════════════════════════════╝");
@@ -395,7 +393,7 @@ async fn print_session_summary(router: &RpcRouter, workspace_id: &str) {
     println!();
 }
 
-fn truncate_path(path: &str, max_len: usize) -> String {
+pub(crate) fn truncate_path(path: &str, max_len: usize) -> String {
     if path.len() <= max_len {
         path.to_string()
     } else {
