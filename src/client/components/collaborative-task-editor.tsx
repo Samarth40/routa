@@ -19,7 +19,9 @@ import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { desktopAwareFetch } from "../utils/diagnostics";
 import type { NoteData } from "../hooks/use-notes";
 import { MarkdownViewer } from "./markdown/markdown-viewer";
-import { type CrafterAgent } from "./task-panel";
+import { type CrafterAgent, CraftersView } from "./task-panel";
+
+type CollabPanelView = "tasks" | "crafters";
 
 interface CollaborativeTaskEditorProps {
   notes: NoteData[];
@@ -63,6 +65,8 @@ export function CollaborativeTaskEditor({
 }: CollaborativeTaskEditorProps) {
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null);
+  const [specExpanded, setSpecExpanded] = useState(true);
+  const [viewMode, setViewMode] = useState<CollabPanelView>("tasks");
   const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set());
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -111,6 +115,47 @@ export function CollaborativeTaskEditor({
     await onExecuteSelected(ids, concurrency);
   };
 
+  // Find spec note
+  const specNote = useMemo(() => notes.find((n) => n.metadata.type === "spec"), [notes]);
+
+  // Vertical resize for spec panel
+  const [specHeight, setSpecHeight] = useState(200);
+  const handleVerticalResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startHeight = specHeight;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaY = moveEvent.clientY - startY;
+      setSpecHeight(Math.max(100, Math.min(600, startHeight + deltaY)));
+    };
+
+    const handleMouseUp = () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  }, [specHeight]);
+
+  // Active crafter tracking
+  const activeCrafterId = useMemo(() => {
+    if (!onSelectTaskNote) return null;
+    const expandedNote = taskNotes.find((n) => n.id === expandedNoteId);
+    if (!expandedNote) return null;
+    const crafter = crafterAgents.find((a) => a.taskId === expandedNote.id);
+    return crafter?.sessionId ?? null;
+  }, [expandedNoteId, taskNotes, crafterAgents, onSelectTaskNote]);
+
+  const onSelectCrafter = useCallback((sessionId: string) => {
+    const crafter = crafterAgents.find((a) => a.sessionId === sessionId);
+    if (crafter?.taskId) {
+      setExpandedNoteId(crafter.taskId);
+      onSelectTaskNote?.(crafter.taskId);
+    }
+  }, [crafterAgents, onSelectTaskNote]);
+
   return (
     <div ref={containerRef} className="flex flex-col h-full">
       {/* Header */}
@@ -132,7 +177,7 @@ export function CollaborativeTaskEditor({
                 Executing{runningCrafterCount > 0 ? ` (${runningCrafterCount})` : ""}...
               </span>
             )}
-            {pendingNotes.length > 0 && (
+            {pendingNotes.length > 0 && !hasRunning && (
               <button
                 onClick={toggleSelectAll}
                 className="text-xs font-medium px-2 py-1 rounded-md bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
@@ -140,7 +185,7 @@ export function CollaborativeTaskEditor({
                 {selectedNoteIds.size === pendingNotes.length ? "Deselect All" : "Select All"}
               </button>
             )}
-            {selectedNoteIds.size > 0 && onExecuteSelected && (
+            {selectedNoteIds.size > 0 && !hasRunning && onExecuteTask && (
               <button
                 onClick={handleExecuteSelected}
                 className="text-xs font-medium px-2.5 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors"
@@ -148,7 +193,7 @@ export function CollaborativeTaskEditor({
                 Execute Selected ({selectedNoteIds.size})
               </button>
             )}
-            {hasPending && onExecuteAll && (
+            {hasPending && !hasRunning && onExecuteAll && (
               <button
                 onClick={() => onExecuteAll(concurrency)}
                 className="text-xs font-medium px-2.5 py-1 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
@@ -246,6 +291,154 @@ export function CollaborativeTaskEditor({
           )}
         </div>
       </div>
+
+      {/* Spec Note (if exists) - resizable vertical split */}
+      {specNote && specNote.content && (
+        <div
+          className="shrink-0 flex flex-col bg-blue-50/50 dark:bg-blue-900/10 relative"
+          style={{ height: specExpanded ? `${specHeight}px` : "auto" }}
+        >
+          {/* Spec Header */}
+          <div
+            className="flex items-center gap-1.5 px-3 py-2 cursor-pointer hover:bg-blue-100/50 dark:hover:bg-blue-900/20 transition-colors shrink-0"
+            onClick={() => setSpecExpanded((prev) => !prev)}
+          >
+            <svg
+              className="w-3 h-3 text-blue-500"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+              />
+            </svg>
+            <span className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider flex-1">
+              Spec
+            </span>
+            {onDeleteNote && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteNote(specNote.id);
+                }}
+                title="Delete spec"
+                className="p-0.5 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+            <svg
+              className={`w-3.5 h-3.5 text-blue-400 transition-transform ${specExpanded ? "rotate-180" : ""}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+          {/* Spec Content */}
+          {specExpanded ? (
+            <div className="flex-1 overflow-y-auto px-3 pb-2">
+              <MarkdownViewer
+                content={specNote.content}
+                className="text-[11px] text-gray-600 dark:text-gray-400"
+              />
+            </div>
+          ) : (
+            <div className="px-3 pb-2">
+              <div className="text-[11px] text-gray-600 dark:text-gray-400 line-clamp-2">
+                <MarkdownViewer
+                  content={specNote.content.slice(0, 200) + (specNote.content.length > 200 ? "..." : "")}
+                  className="text-[11px]"
+                />
+              </div>
+            </div>
+          )}
+          {/* Vertical resize handle - only show when expanded */}
+          {specExpanded && (
+            <div
+              className="absolute left-0 right-0 bottom-0 h-1 cursor-row-resize z-20 hover:bg-indigo-500/30 active:bg-indigo-500/50 transition-colors group"
+              onMouseDown={handleVerticalResizeStart}
+            >
+              <div className="absolute left-1/2 bottom-0 -translate-x-1/2 w-8 h-1 rounded-full bg-gray-300 dark:bg-gray-600 group-hover:bg-indigo-400 group-active:bg-indigo-500 transition-colors" />
+            </div>
+          )}
+        </div>
+      )}
+      {/* Divider between SPEC and Tasks when SPEC exists and is expanded */}
+      {specNote && specNote.content && specExpanded && (
+        <div className="h-px bg-gray-200 dark:bg-gray-700 shrink-0" />
+      )}
+
+      {/* Content */}
+      {viewMode === "tasks" ? (
+        /* ─── Task Notes List ─────────────────────────── */
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-3 space-y-2">
+            {taskNotes.map((note, index) => (
+              <TaskNoteCard
+                key={note.id}
+                note={note}
+                index={index}
+                expanded={expandedNoteId === note.id}
+                editing={editingNoteId === note.id}
+                selected={selectedNoteIds.has(note.id)}
+                onToggleSelect={() => toggleNoteSelection(note.id)}
+                onToggleExpand={() =>
+                  setExpandedNoteId((prev) =>
+                    prev === note.id ? null : note.id
+                  )
+                }
+                onEdit={() => setEditingNoteId(note.id)}
+                onCancelEdit={() => setEditingNoteId(null)}
+                onSave={async (update) => {
+                  await onUpdateNote(note.id, update);
+                  setEditingNoteId(null);
+                }}
+                onDelete={
+                  onDeleteNote
+                    ? () => onDeleteNote(note.id)
+                    : undefined
+                }
+                onStatusChange={async (status) => {
+                  await onUpdateNote(note.id, {
+                    metadata: { ...note.metadata, taskStatus: status },
+                  });
+                }}
+                onExecute={
+                  onExecuteTask
+                    ? () => onExecuteTask(note.id)
+                    : undefined
+                }
+                executeDisabled={concurrency <= 1 && hasRunning}
+              />
+            ))}
+
+            {taskNotes.length === 0 && (
+              <div className="text-center py-8 text-xs text-gray-400 dark:text-gray-500">
+                <div className="space-y-1.5">
+                  <div className="text-sm">No task notes yet</div>
+                  <div>Tasks will appear here when ROUTA creates them</div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* ─── CRAFTERs View ───────────────────────────── */
+        <CraftersView
+          agents={crafterAgents}
+          activeCrafterId={activeCrafterId}
+          onSelectCrafter={onSelectCrafter}
+        />
+      )}
     </div>
   );
 }
@@ -266,6 +459,7 @@ interface TaskNoteCardProps {
   onDelete?: () => void;
   onStatusChange: (status: string) => Promise<void>;
   onExecute?: () => void;
+  executeDisabled?: boolean;
 }
 
 const STATUS_LABELS: Record<string, { label: string; color: string; bg: string }> = {
