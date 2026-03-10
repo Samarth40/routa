@@ -58,6 +58,7 @@ export interface KanbanColumnInfo {
   color?: string;
   position: number;
   stage: string;
+  visible?: boolean;
   automation?: KanbanColumnAutomationInfo;
 }
 

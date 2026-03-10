@@ -56,6 +56,7 @@ export function KanbanTab({ workspaceId, boards, tasks, sessions, providers, spe
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null); // For card detail view;
   const [visibleColumns, setVisibleColumns] = useState<string[]>([]);
+  const [iframeLoaded, setIframeLoaded] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
   // Agent input state
@@ -151,8 +152,11 @@ User request: ${agentInput}`;
   // Initialize visible columns when board changes
   useEffect(() => {
     if (board) {
-      const allColumnIds = board.columns.map((col) => col.id);
-      setVisibleColumns(allColumnIds);
+      // Use persisted visibility if available, otherwise show all columns
+      const columnsWithVisibility = board.columns.filter((col) => 
+        col.visible !== undefined ? col.visible : true
+      );
+      setVisibleColumns(columnsWithVisibility.map((col) => col.id));
     }
   }, [board]);
 
@@ -195,6 +199,19 @@ User request: ${agentInput}`;
   const openTaskDetail = useCallback((task: TaskInfo) => {
     setActiveTaskId(task.id);
     setActiveSessionId(task.triggerSessionId ?? null);
+    setIframeLoaded(false); // Reset iframe loaded state
+  }, []);
+
+  const openSession = useCallback((sessionId: string | null) => {
+    setActiveTaskId(null);
+    setActiveSessionId(sessionId);
+    setIframeLoaded(false);
+  }, []);
+
+  const closeTaskDetail = useCallback(() => {
+    setActiveTaskId(null);
+    setActiveSessionId(null);
+    setIframeLoaded(false);
   }, []);
 
   const stopCardInteraction = useCallback((event: { stopPropagation: () => void }) => {
@@ -213,6 +230,25 @@ User request: ${agentInput}`;
       }
     }
   }, [activeTaskId]);
+
+  // Close modal on Escape key
+  useEffect(() => {
+    if (!activeTaskId && !activeSessionId && !showSettings && !selectedCodebase) return;
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (activeTaskId || activeSessionId) {
+          closeTaskDetail();
+        } else if (showSettings) {
+          setShowSettings(false);
+        } else if (selectedCodebase) {
+          setSelectedCodebase(null);
+          setCodebaseWorktrees([]);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [activeTaskId, activeSessionId, showSettings, selectedCodebase, closeTaskDetail]);
 
   // Fetch worktrees for tasks that have worktreeId
   useEffect(() => {
@@ -299,7 +335,7 @@ User request: ${agentInput}`;
   async function retryTaskTrigger(taskId: string) {
     const updated = await patchTask(taskId, { retryTrigger: true });
     if (updated.triggerSessionId) {
-      setActiveSessionId(updated.triggerSessionId);
+      openSession(updated.triggerSessionId);
     }
     onRefresh();
   }
@@ -350,7 +386,7 @@ User request: ${agentInput}`;
         });
       }
       if (updated.triggerSessionId && updated.triggerSessionId !== movingTask.triggerSessionId) {
-        setActiveSessionId(updated.triggerSessionId);
+        openSession(updated.triggerSessionId);
       }
       onRefresh();
     } catch (error) {
@@ -450,7 +486,7 @@ User request: ${agentInput}`;
                 </div>
                 {agentSessionId && (
                   <button
-                    onClick={() => setActiveSessionId(agentSessionId)}
+                    onClick={() => openSession(agentSessionId)}
                     className="shrink-0 text-xs text-amber-600 hover:underline dark:text-amber-400"
                     title="View last agent response"
                   >
@@ -473,21 +509,6 @@ User request: ${agentInput}`;
                 ))}
               </select>
             )}
-            <select
-              multiple
-              value={visibleColumns}
-              onChange={(event) => {
-                const selected = Array.from(event.target.selectedOptions, (option) => option.value);
-                setVisibleColumns(selected.length > 0 ? selected : board?.columns.map((col) => col.id) ?? []);
-              }}
-              className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 dark:border-gray-700 dark:bg-[#12141c] dark:text-gray-200"
-              size={1}
-              title="Visible columns"
-            >
-              {board?.columns.map((col) => (
-                <option key={col.id} value={col.id}>{col.name}</option>
-              ))}
-            </select>
             <button
               onClick={() => setShowSettings(true)}
               className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-[#191c28]"
@@ -627,10 +648,8 @@ User request: ${agentInput}`;
                                 : "bg-rose-100 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300";
                             return (
                               <button
-                                onClick={() => {
-                                  setActiveTaskId(task.id);
-                                  setActiveSessionId(task.triggerSessionId ?? null);
-                                }}
+                                onClick={() => openTaskDetail(task)}
+                                onClickCapture={stopCardInteraction}
                                 className="mt-2 flex items-center gap-1.5 group"
                                 title="Click to view worktree details"
                                 data-testid="worktree-badge"
@@ -783,10 +802,7 @@ User request: ${agentInput}`;
                               </button>
                               {task.triggerSessionId && (
                                 <button
-                                  onClick={() => {
-                                    setActiveTaskId(null);
-                                    setActiveSessionId(task.triggerSessionId ?? null);
-                                  }}
+                                  onClick={() => openSession(task.triggerSessionId ?? null)}
                                   onClickCapture={stopCardInteraction}
                                   className="rounded-md bg-violet-100 px-2 py-1 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/20 dark:text-violet-300"
                                 >
@@ -818,8 +834,8 @@ User request: ${agentInput}`;
       )}
 
       {(activeSessionId || activeTaskId) && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6">
-          <div className="relative h-[88vh] w-full max-w-7xl overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-[#1c1f2e] dark:bg-[#12141c]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6 animate-in fade-in duration-150">
+          <div className="relative h-[88vh] w-full max-w-7xl overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-[#1c1f2e] dark:bg-[#12141c] animate-in zoom-in-95 duration-150">
             <div className="flex h-12 items-center justify-between border-b border-gray-100 px-4 dark:border-[#191c28]">
               <div>
                 <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
@@ -841,10 +857,7 @@ User request: ${agentInput}`;
                   </a>
                 )}
                 <button
-                  onClick={() => {
-                    setActiveSessionId(null);
-                    setActiveTaskId(null);
-                  }}
+                  onClick={closeTaskDetail}
                   className="rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-[#191c28]"
                 >
                   Close
@@ -1098,11 +1111,22 @@ User request: ${agentInput}`;
               })()}
               {/* Right: Session (if activeSessionId exists) */}
               {activeSessionId ? (
-                <iframe
-                  title="ACP session"
-                  src={`/workspace/${workspaceId}/sessions/${activeSessionId}?embed=true`}
-                  className={`border-0 ${activeTaskId ? "w-2/3" : "w-full"} h-full`}
-                />
+                <div className={`relative ${activeTaskId ? "w-2/3" : "w-full"} h-full`}>
+                  {!iframeLoaded && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-white dark:bg-[#12141c]">
+                      <div className="flex flex-col items-center gap-3">
+                        <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-amber-500 dark:border-gray-700 dark:border-t-amber-400" />
+                        <div className="text-sm text-gray-500 dark:text-gray-400">Loading session...</div>
+                      </div>
+                    </div>
+                  )}
+                  <iframe
+                    title="ACP session"
+                    src={`/workspace/${workspaceId}/sessions/${activeSessionId}?embed=true`}
+                    className="border-0 w-full h-full"
+                    onLoad={() => setIframeLoaded(true)}
+                  />
+                </div>
               ) : activeTaskId ? (
                 <div className="w-2/3 flex items-center justify-center text-sm text-gray-500 dark:text-gray-400">
                   No session available for this task
@@ -1125,6 +1149,40 @@ User request: ${agentInput}`;
               >
                 ✕
               </button>
+            </div>
+
+            {/* Column Visibility */}
+            <div className="space-y-3 pb-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Column Visibility</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Select which columns to display on the board.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {board.columns
+                  .slice()
+                  .sort((a, b) => a.position - b.position)
+                  .map((col) => (
+                    <label
+                      key={col.id}
+                      className="flex items-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#0d1018] px-3 py-2 text-sm cursor-pointer hover:bg-gray-100 dark:hover:bg-[#191c28] transition-colors"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={visibleColumns.includes(col.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setVisibleColumns((prev) => [...prev, col.id]);
+                          } else {
+                            const remaining = visibleColumns.filter((id) => id !== col.id);
+                            setVisibleColumns(remaining.length > 0 ? remaining : [col.id]);
+                          }
+                        }}
+                        className="rounded border-gray-300 text-amber-500 focus:ring-amber-500"
+                      />
+                      <span className="text-gray-700 dark:text-gray-300">{col.name}</span>
+                    </label>
+                  ))}
+              </div>
             </div>
 
             {/* Column Configuration */}
@@ -1283,9 +1341,10 @@ User request: ${agentInput}`;
                   if (!board) return;
                   setSettingsSaving(true);
                   try {
-                    // Merge automation config into columns
+                    // Merge automation config and visibility into columns
                     const updatedColumns = board.columns.map((col) => ({
                       ...col,
+                      visible: visibleColumns.includes(col.id),
                       automation: columnAutomation[col.id]?.enabled
                         ? columnAutomation[col.id]
                         : undefined,
