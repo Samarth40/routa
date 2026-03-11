@@ -327,7 +327,7 @@ export function ChatPanel({
             break;
           }
           case "tool_call":
-          // Consolidated form of tool_call (stored in DB via getConsolidatedHistory)
+            // eslint-disable-next-line no-fallthrough
           case "tool_call_update": {
             const toolKind = update.kind as string | undefined;
             const title = (update.title as string) ?? toolKind ?? "tool";
@@ -466,6 +466,7 @@ export function ChatPanel({
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchSessions();
   }, [fetchSessions, activeSessionId]);
 
@@ -1229,7 +1230,9 @@ export function ChatPanel({
 
   // Reset setup model when provider changes
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSetupModel("");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSetupModelModels([]);
   }, [acp.selectedProvider]);
 

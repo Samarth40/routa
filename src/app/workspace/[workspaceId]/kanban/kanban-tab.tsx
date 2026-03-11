@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import type { AcpProviderInfo } from "@/client/acp-client";
 import type { CodebaseData } from "@/client/hooks/use-workspaces";
-import type { UseAcpState } from "@/client/hooks/use-acp";
+import type { UseAcpState, UseAcpActions } from "@/client/hooks/use-acp";
 import type { KanbanBoardInfo, SessionInfo, TaskInfo, WorktreeInfo } from "../types";
 import { KanbanCreateModal, EMPTY_DRAFT, type DraftIssue } from "../kanban-create-modal";
 import { KanbanCard } from "./kanban-card";
 import { KanbanSettingsModal, type ColumnAutomationConfig } from "./kanban-settings-modal";
 import { KanbanCardDetail } from "./kanban-card-detail";
+import { ChatPanel } from "@/client/components/chat-panel";
 
 interface SpecialistOption {
   id: string;
@@ -25,8 +26,8 @@ interface KanbanTabProps {
   specialists: SpecialistOption[];
   codebases: CodebaseData[];
   onRefresh: () => void;
-  /** ACP state for agent input */
-  acp?: UseAcpState;
+  /** ACP state and actions for agent input and session management */
+  acp?: UseAcpState & UseAcpActions;
   /** Handler for agent prompt - creates session and sends prompt */
   onAgentPrompt?: (prompt: string) => Promise<string | null>;
 }
@@ -57,7 +58,6 @@ export function KanbanTab({ workspaceId, boards, tasks, sessions, providers, spe
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null); // For card detail view;
   const [visibleColumns, setVisibleColumns] = useState<string[]>([]);
-  const [iframeLoaded, setIframeLoaded] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
   // Agent input state
@@ -188,19 +188,24 @@ User request: ${agentInput}`;
   const openTaskDetail = useCallback((task: TaskInfo) => {
     setActiveTaskId(task.id);
     setActiveSessionId(task.triggerSessionId ?? null);
-    setIframeLoaded(false); // Reset iframe loaded state
-  }, []);
+    // Select the session in ACP if it exists
+    if (task.triggerSessionId && acp) {
+      acp.selectSession(task.triggerSessionId);
+    }
+  }, [acp]);
 
   const openSession = useCallback((sessionId: string | null) => {
     setActiveTaskId(null);
     setActiveSessionId(sessionId);
-    setIframeLoaded(false);
-  }, []);
+    // Select the session in ACP
+    if (sessionId && acp) {
+      acp.selectSession(sessionId);
+    }
+  }, [acp]);
 
   const closeTaskDetail = useCallback(() => {
     setActiveTaskId(null);
     setActiveSessionId(null);
-    setIframeLoaded(false);
   }, []);
 
   // Close modal on Escape key
@@ -309,7 +314,10 @@ User request: ${agentInput}`;
     if (updated.triggerSessionId) {
       // Keep the task detail open and update the session ID
       setActiveSessionId(updated.triggerSessionId);
-      setIframeLoaded(false);
+      // Select the new session in ACP
+      if (acp) {
+        acp.selectSession(updated.triggerSessionId);
+      }
     }
     onRefresh();
   }
@@ -653,21 +661,20 @@ User request: ${agentInput}`;
                 );
               })()}
               {/* Right: Session (if activeSessionId exists) */}
-              {activeSessionId ? (
-                <div className={`relative ${activeTaskId ? "w-2/3" : "w-full"} h-full`}>
-                  {!iframeLoaded && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-white dark:bg-[#12141c]">
-                      <div className="flex flex-col items-center gap-3">
-                        <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-amber-500 dark:border-gray-700 dark:border-t-amber-400" />
-                        <div className="text-sm text-gray-500 dark:text-gray-400">Loading session...</div>
-                      </div>
-                    </div>
-                  )}
-                  <iframe
-                    title="ACP session"
-                    src={`/workspace/${workspaceId}/sessions/${activeSessionId}?embed=true`}
-                    className="border-0 w-full h-full"
-                    onLoad={() => setIframeLoaded(true)}
+              {activeSessionId && acp ? (
+                <div className={`${activeTaskId ? "w-2/3" : "w-full"} h-full overflow-hidden`}>
+                  <ChatPanel
+                    acp={acp}
+                    activeSessionId={activeSessionId}
+                    onEnsureSession={async () => activeSessionId}
+                    onSelectSession={async (sessionId) => {
+                      setActiveSessionId(sessionId);
+                      acp.selectSession(sessionId);
+                    }}
+                    repoSelection={null}
+                    onRepoChange={() => {}}
+                    codebases={codebases}
+                    activeWorkspaceId={workspaceId}
                   />
                 </div>
               ) : activeTaskId ? (

@@ -190,8 +190,32 @@ function ProviderSection({
         onChange={async (e) => {
           if (e.target.value) {
             await onPatchTask(task.id, { assignedProvider: e.target.value, assignedRole: task.assignedRole ?? "DEVELOPER" });
+            // Also update the session provider if this task has a session
+            if (task.triggerSessionId) {
+              try {
+                await fetch(`/api/sessions/${encodeURIComponent(task.triggerSessionId)}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ provider: e.target.value }),
+                });
+              } catch (error) {
+                console.error("Failed to update session provider:", error);
+              }
+            }
           } else {
             await onPatchTask(task.id, { assignedProvider: undefined, assignedRole: undefined, assignedSpecialistId: undefined, assignedSpecialistName: undefined });
+            // Also clear the session provider if this task has a session
+            if (task.triggerSessionId) {
+              try {
+                await fetch(`/api/sessions/${encodeURIComponent(task.triggerSessionId)}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ provider: null }),
+                });
+              } catch (error) {
+                console.error("Failed to clear session provider:", error);
+              }
+            }
           }
           onRefresh();
         }}

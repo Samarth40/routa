@@ -734,7 +734,7 @@ export function SessionPageClient() {
           }
 
           case "completed":
-
+            // eslint-disable-next-line no-fallthrough
           case "ended": {
             agent.status = "completed";
             // Sync task status: mark corresponding task as completed

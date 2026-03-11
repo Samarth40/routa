@@ -47,7 +47,7 @@ export function HomeInput({
   externalPendingSkill,
   onExternalSkillConsumed,
   displaySkills,
-  onSkillPillClick,
+  onSkillPillClick: _onSkillPillClick,
 }: HomeInputProps) {
   const router = useRouter();
   const acp = useAcp();

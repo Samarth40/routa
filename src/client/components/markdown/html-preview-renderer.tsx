@@ -10,7 +10,7 @@
  * - Copy button for source code
  */
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback } from "react";
 
 interface HtmlPreviewRendererProps {
   code: string;
