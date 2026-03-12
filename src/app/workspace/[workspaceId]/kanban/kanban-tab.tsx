@@ -68,6 +68,12 @@ export function KanbanTab({ workspaceId, boards, tasks, sessions, providers, spe
   // Codebase detail popup state
   const [selectedCodebase, setSelectedCodebase] = useState<CodebaseData | null>(null);
   const [codebaseWorktrees, setCodebaseWorktrees] = useState<WorktreeInfo[]>([]);
+  // Codebase edit state
+  const [editingCodebase, setEditingCodebase] = useState(false);
+  const [editLabel, setEditLabel] = useState("");
+  const [editRepoPath, setEditRepoPath] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   // Worktree cache: worktreeId -> WorktreeInfo
   const [worktreeCache, setWorktreeCache] = useState<Record<string, WorktreeInfo>>({});
@@ -217,6 +223,43 @@ User request: ${agentInput}`;
   const closeTaskDetail = useCallback(() => {
     setActiveTaskId(null);
     setActiveSessionId(null);
+  }, []);
+
+  // Codebase edit handlers
+  const handleStartEditCodebase = useCallback(() => {
+    if (!selectedCodebase) return;
+    setEditLabel(selectedCodebase.label ?? "");
+    setEditRepoPath(selectedCodebase.repoPath);
+    setEditError(null);
+    setEditingCodebase(true);
+  }, [selectedCodebase]);
+
+  const handleSaveCodebase = useCallback(async () => {
+    if (!selectedCodebase) return;
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      const res = await fetch(`/api/codebases/${encodeURIComponent(selectedCodebase.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: editLabel, repoPath: editRepoPath }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to update repository");
+      setEditingCodebase(false);
+      setSelectedCodebase(null);
+      setCodebaseWorktrees([]);
+      onRefresh(); // Refresh to get updated codebase data
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "Failed to update repository");
+    } finally {
+      setEditSaving(false);
+    }
+  }, [selectedCodebase, editLabel, editRepoPath, onRefresh]);
+
+  const handleCancelEditCodebase = useCallback(() => {
+    setEditingCodebase(false);
+    setEditError(null);
   }, []);
 
   // Close modal on Escape key
@@ -777,61 +820,116 @@ User request: ${agentInput}`;
               <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
                 {selectedCodebase.label ?? selectedCodebase.repoPath.split("/").pop()}
               </h3>
-              <button
-                onClick={() => { setSelectedCodebase(null); setCodebaseWorktrees([]); }}
-                className="text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-              >
-                Close
-              </button>
+              <div className="flex items-center gap-2">
+                {!editingCodebase && (
+                  <button
+                    onClick={handleStartEditCodebase}
+                    className="text-sm text-amber-500 hover:text-amber-600 dark:text-amber-400 dark:hover:text-amber-300"
+                  >
+                    Edit
+                  </button>
+                )}
+                <button
+                  onClick={() => { setSelectedCodebase(null); setCodebaseWorktrees([]); setEditingCodebase(false); }}
+                  className="text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                >
+                  Close
+                </button>
+              </div>
             </div>
-            <div className="space-y-3 text-sm">
-              <div className="grid grid-cols-2 gap-3">
+
+            {/* Edit form */}
+            {editingCodebase ? (
+              <div className="space-y-4">
                 <div>
-                  <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Path</div>
-                  <div className="text-gray-700 dark:text-gray-300 font-mono text-xs truncate">{selectedCodebase.repoPath}</div>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Label</label>
+                  <input
+                    value={editLabel}
+                    onChange={(e) => setEditLabel(e.target.value)}
+                    placeholder="e.g. routa-js"
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none focus:border-amber-400 dark:border-gray-700 dark:bg-[#0d1018] dark:text-gray-200"
+                  />
                 </div>
                 <div>
-                  <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Branch</div>
-                  <div className="text-gray-700 dark:text-gray-300">{selectedCodebase.branch ?? "—"}</div>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Repository Path</label>
+                  <input
+                    value={editRepoPath}
+                    onChange={(e) => setEditRepoPath(e.target.value)}
+                    placeholder="/path/to/repo"
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-mono text-gray-700 outline-none focus:border-amber-400 dark:border-gray-700 dark:bg-[#0d1018] dark:text-gray-200"
+                  />
                 </div>
-                <div>
-                  <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Source Type</div>
-                  <div className="text-gray-700 dark:text-gray-300">{selectedCodebase.sourceType ?? "local"}</div>
+                {editError && (
+                  <div className="text-xs text-rose-600 dark:text-rose-400">{editError}</div>
+                )}
+                <div className="flex gap-2 justify-end">
+                  <button
+                    onClick={handleCancelEditCodebase}
+                    disabled={editSaving}
+                    className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-[#191c28]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => void handleSaveCodebase()}
+                    disabled={editSaving}
+                    className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-60"
+                  >
+                    {editSaving ? "Saving…" : "Save"}
+                  </button>
                 </div>
-                {selectedCodebase.sourceUrl && (
+              </div>
+            ) : (
+              /* View mode */
+              <div className="space-y-3 text-sm">
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Source URL</div>
-                    <a href={selectedCodebase.sourceUrl} target="_blank" rel="noreferrer" className="text-amber-600 dark:text-amber-400 hover:underline text-xs truncate block">
-                      {selectedCodebase.sourceUrl}
-                    </a>
+                    <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Path</div>
+                    <div className="text-gray-700 dark:text-gray-300 font-mono text-xs truncate">{selectedCodebase.repoPath}</div>
                   </div>
-                )}
-              </div>
-              <div>
-                <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Worktrees ({codebaseWorktrees.length})</div>
-                {codebaseWorktrees.length === 0 ? (
-                  <div className="text-gray-400 dark:text-gray-500 text-xs">No worktrees created yet</div>
-                ) : (
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {codebaseWorktrees.map((wt) => (
-                      <div key={wt.id} className="rounded-lg border border-gray-200 dark:border-gray-700 p-2">
-                        <div className="flex items-center gap-2">
-                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                            wt.status === "active"
-                              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300"
-                              : wt.status === "creating"
-                                ? "bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
-                                : "bg-rose-100 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300"
-                          }`}>{wt.status}</span>
-                          <span className="font-mono text-xs text-gray-600 dark:text-gray-400">{wt.branch}</span>
+                  <div>
+                    <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Branch</div>
+                    <div className="text-gray-700 dark:text-gray-300">{selectedCodebase.branch ?? "—"}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Source Type</div>
+                    <div className="text-gray-700 dark:text-gray-300">{selectedCodebase.sourceType ?? "local"}</div>
+                  </div>
+                  {selectedCodebase.sourceUrl && (
+                    <div>
+                      <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Source URL</div>
+                      <a href={selectedCodebase.sourceUrl} target="_blank" rel="noreferrer" className="text-amber-600 dark:text-amber-400 hover:underline text-xs truncate block">
+                        {selectedCodebase.sourceUrl}
+                      </a>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Worktrees ({codebaseWorktrees.length})</div>
+                  {codebaseWorktrees.length === 0 ? (
+                    <div className="text-gray-400 dark:text-gray-500 text-xs">No worktrees created yet</div>
+                  ) : (
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {codebaseWorktrees.map((wt) => (
+                        <div key={wt.id} className="rounded-lg border border-gray-200 dark:border-gray-700 p-2">
+                          <div className="flex items-center gap-2">
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                              wt.status === "active"
+                                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300"
+                                : wt.status === "creating"
+                                  ? "bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
+                                  : "bg-rose-100 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300"
+                            }`}>{wt.status}</span>
+                            <span className="font-mono text-xs text-gray-600 dark:text-gray-400">{wt.branch}</span>
+                          </div>
+                          <div className="text-xs text-gray-400 dark:text-gray-500 font-mono mt-0.5 truncate">{wt.worktreePath}</div>
                         </div>
-                        <div className="text-xs text-gray-400 dark:text-gray-500 font-mono mt-0.5 truncate">{wt.worktreePath}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       )}
