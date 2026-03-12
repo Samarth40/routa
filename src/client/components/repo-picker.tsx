@@ -11,7 +11,7 @@
  *   - Clone status: progress phases, percent
  */
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { desktopAwareFetch } from "../utils/diagnostics";
 import { createPortal } from "react-dom";
 import { BranchSelector } from "./branch-selector";
@@ -44,6 +44,12 @@ export interface RepoSelection {
 interface RepoPickerProps {
   value: RepoSelection | null;
   onChange: (selection: RepoSelection | null) => void;
+  /** Additional repos to show (e.g., workspace codebases) */
+  additionalRepos?: Array<{
+    name: string;
+    path: string;
+    branch?: string;
+  }>;
 }
 
 type PickerTab = "existing" | "clone";
@@ -56,7 +62,7 @@ interface CloneProgress {
 
 // ─── Component ──────────────────────────────────────────────────────────
 
-export function RepoPicker({ value, onChange }: RepoPickerProps) {
+export function RepoPicker({ value, onChange, additionalRepos }: RepoPickerProps) {
   const [repos, setRepos] = useState<ClonedRepo[]>([]);
   const [loadingRepos, setLoadingRepos] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -245,11 +251,34 @@ export function RepoPicker({ value, onChange }: RepoPickerProps) {
 
   // ── Filtered repos ─────────────────────────────────────────────────
 
+  // Merge cloned repos with additional repos (workspace codebases)
+  const allRepos = useMemo(() => {
+    const merged: ClonedRepo[] = [...repos];
+    const existingPaths = new Set(repos.map((r) => r.path));
+
+    // Add additional repos that aren't already in the cloned repos list
+    if (additionalRepos) {
+      for (const ar of additionalRepos) {
+        if (!existingPaths.has(ar.path)) {
+          merged.push({
+            name: ar.name,
+            path: ar.path,
+            dirName: ar.path.split("/").pop() || ar.name,
+            branch: ar.branch || "",
+            branches: ar.branch ? [ar.branch] : [],
+            status: { clean: true, ahead: 0, behind: 0, modified: 0, untracked: 0 },
+          });
+        }
+      }
+    }
+    return merged;
+  }, [repos, additionalRepos]);
+
   const filteredRepos = searchQuery.trim()
-    ? repos.filter((r) =>
+    ? allRepos.filter((r) =>
         r.name.toLowerCase().includes(searchQuery.toLowerCase())
       )
-    : repos;
+    : allRepos;
 
   // ── Render ─────────────────────────────────────────────────────────
 

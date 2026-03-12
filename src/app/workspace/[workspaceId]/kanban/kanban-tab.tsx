@@ -75,6 +75,15 @@ export function KanbanTab({ workspaceId, boards, tasks, sessions, providers, spe
   const [editRepoSelection, setEditRepoSelection] = useState<RepoSelection | null>(null);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  // Re-clone state
+  const [recloning, setRecloning] = useState(false);
+  const [recloneError, setRecloneError] = useState<string | null>(null);
+  const [recloneSuccess, setRecloneSuccess] = useState<string | null>(null);
+  // Replace all repos state
+  const [showReplaceAllConfirm, setShowReplaceAllConfirm] = useState(false);
+  const [replacingAll, setReplacingAll] = useState(false);
+  // Live branch info for selected codebase
+  const [liveBranchInfo, setLiveBranchInfo] = useState<{ current: string; branches: string[] } | null>(null);
 
   // Worktree cache: worktreeId -> WorktreeInfo
   const [worktreeCache, setWorktreeCache] = useState<Record<string, WorktreeInfo>>({});
@@ -367,6 +376,73 @@ User request: ${agentInput}`;
     setEditError(null);
   }, []);
 
+  // Re-clone handler - triggers a fresh clone of the repository
+  const handleReclone = useCallback(async () => {
+    if (!selectedCodebase?.sourceUrl) return;
+    setRecloning(true);
+    setRecloneError(null);
+    setRecloneSuccess(null);
+    try {
+      const res = await fetch("/api/clone", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: selectedCodebase.sourceUrl, force: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to re-clone repository");
+
+      // Update the codebase with the new path if it changed
+      if (data.path && data.path !== selectedCodebase.repoPath) {
+        await fetch(`/api/codebases/${encodeURIComponent(selectedCodebase.id)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ repoPath: data.path, branch: data.branch }),
+        });
+      }
+      setRecloneSuccess(`Repository re-cloned successfully${data.existed ? " (pulled latest)" : ""}`);
+      onRefresh();
+    } catch (err) {
+      setRecloneError(err instanceof Error ? err.message : "Failed to re-clone repository");
+    } finally {
+      setRecloning(false);
+    }
+  }, [selectedCodebase, onRefresh]);
+
+  // Replace all repos handler - updates all codebases to use the new cloned path
+  const handleReplaceAllRepos = useCallback(async () => {
+    if (!selectedCodebase?.sourceUrl || !editRepoSelection) return;
+    setReplacingAll(true);
+    setRecloneError(null);
+    try {
+      // Update all codebases in the workspace to use the new repo path
+      const updatePromises = codebases.map(async (cb) => {
+        const res = await fetch(`/api/codebases/${encodeURIComponent(cb.id)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            repoPath: editRepoSelection.path,
+            branch: editRepoSelection.branch,
+            label: editRepoSelection.name,
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error ?? `Failed to update codebase ${cb.id}`);
+        }
+      });
+      await Promise.all(updatePromises);
+      setShowReplaceAllConfirm(false);
+      setEditingCodebase(false);
+      setSelectedCodebase(null);
+      setCodebaseWorktrees([]);
+      onRefresh();
+    } catch (err) {
+      setRecloneError(err instanceof Error ? err.message : "Failed to replace repositories");
+    } finally {
+      setReplacingAll(false);
+    }
+  }, [selectedCodebase, editRepoSelection, codebases, onRefresh]);
+
   // Close modal on Escape key
   useEffect(() => {
     if (!activeTaskId && !activeSessionId && !showSettings && !selectedCodebase) return;
@@ -412,6 +488,9 @@ User request: ${agentInput}`;
   }, [localTasks, worktreeCache]);
 
   async function fetchCodebaseWorktrees(codebase: CodebaseData) {
+    // Reset live branch info
+    setLiveBranchInfo(null);
+
     try {
       const res = await fetch(
         `/api/workspaces/${encodeURIComponent(workspaceId)}/codebases/${encodeURIComponent(codebase.id)}/worktrees`,
@@ -420,6 +499,15 @@ User request: ${agentInput}`;
       if (res.ok) {
         const data = await res.json();
         setCodebaseWorktrees(Array.isArray(data.worktrees) ? data.worktrees as WorktreeInfo[] : []);
+      }
+    } catch { /* ignore */ }
+
+    // Fetch live branch info from the repo
+    try {
+      const branchRes = await fetch(`/api/git/branch-info?repoPath=${encodeURIComponent(codebase.repoPath)}`, { cache: "no-store" });
+      if (branchRes.ok) {
+        const branchData = await branchRes.json();
+        setLiveBranchInfo({ current: branchData.current, branches: branchData.branches || [] });
       }
     } catch { /* ignore */ }
   }
@@ -935,7 +1023,7 @@ User request: ${agentInput}`;
                   </button>
                 )}
                 <button
-                  onClick={() => { setSelectedCodebase(null); setCodebaseWorktrees([]); setEditingCodebase(false); }}
+                  onClick={() => { setSelectedCodebase(null); setCodebaseWorktrees([]); setEditingCodebase(false); setLiveBranchInfo(null); setRecloneError(null); setRecloneSuccess(null); }}
                   className="text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                 >
                   Close
@@ -953,18 +1041,50 @@ User request: ${agentInput}`;
                   <RepoPicker
                     value={editRepoSelection}
                     onChange={handleRepoSelectionChange}
+                    additionalRepos={codebases.map((cb) => ({
+                      name: cb.label ?? cb.repoPath.split("/").pop() ?? cb.repoPath,
+                      path: cb.repoPath,
+                      branch: cb.branch,
+                    }))}
                   />
                 </div>
                 {editError && (
                   <div className="text-xs text-rose-600 dark:text-rose-400">{editError}</div>
                 )}
+                {recloneError && (
+                  <div className="text-xs text-rose-600 dark:text-rose-400">{recloneError}</div>
+                )}
                 {editSaving && (
                   <div className="text-xs text-amber-600 dark:text-amber-400">Updating repository...</div>
                 )}
+
+                {/* Replace All Repos option - only show when there are multiple codebases */}
+                {codebases.length > 1 && editRepoSelection && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900/40 dark:bg-amber-900/10">
+                    <div className="flex items-start gap-2">
+                      <svg className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <div className="flex-1">
+                        <p className="text-xs text-amber-700 dark:text-amber-300">
+                          You have {codebases.length} repositories in this workspace. Would you like to replace all of them with this repository?
+                        </p>
+                        <button
+                          onClick={() => setShowReplaceAllConfirm(true)}
+                          disabled={editSaving || replacingAll}
+                          className="mt-2 text-xs font-medium text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
+                        >
+                          Replace All Repositories →
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex gap-2 justify-end">
                   <button
                     onClick={handleCancelEditCodebase}
-                    disabled={editSaving}
+                    disabled={editSaving || replacingAll}
                     className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-[#191c28]"
                   >
                     Cancel
@@ -981,7 +1101,12 @@ User request: ${agentInput}`;
                   </div>
                   <div>
                     <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Branch</div>
-                    <div className="text-gray-700 dark:text-gray-300">{selectedCodebase.branch ?? "—"}</div>
+                    <div className="text-gray-700 dark:text-gray-300">
+                      {liveBranchInfo?.current ?? selectedCodebase.branch ?? "—"}
+                      {liveBranchInfo && liveBranchInfo.current !== selectedCodebase.branch && selectedCodebase.branch && (
+                        <span className="ml-1 text-[10px] text-amber-500">(stored: {selectedCodebase.branch})</span>
+                      )}
+                    </div>
                   </div>
                   <div>
                     <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Source Type</div>
@@ -1020,8 +1145,84 @@ User request: ${agentInput}`;
                     </div>
                   )}
                 </div>
+
+                {/* Re-clone section - only show for GitHub repos */}
+                {selectedCodebase.sourceType === "github" && selectedCodebase.sourceUrl && (
+                  <div className="pt-3 border-t border-gray-200 dark:border-gray-700">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-xs font-medium text-gray-700 dark:text-gray-300">Re-clone Repository</div>
+                        <div className="text-[11px] text-gray-500 dark:text-gray-400">Pull latest or re-clone if the local copy is corrupted</div>
+                      </div>
+                      <button
+                        onClick={handleReclone}
+                        disabled={recloning}
+                        className="rounded-lg bg-violet-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-600 disabled:opacity-50"
+                      >
+                        {recloning ? "Cloning..." : "Re-clone"}
+                      </button>
+                    </div>
+                    {recloneError && (
+                      <div className="mt-2 text-xs text-rose-600 dark:text-rose-400">{recloneError}</div>
+                    )}
+                    {recloneSuccess && (
+                      <div className="mt-2 text-xs text-emerald-600 dark:text-emerald-400">{recloneSuccess}</div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Replace All Repos Confirmation Modal */}
+      {showReplaceAllConfirm && editRepoSelection && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 px-4 animate-in fade-in duration-150">
+          <div className="relative w-full max-w-md overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-[#1c1f2e] dark:bg-[#12141c] animate-in zoom-in-95 duration-150">
+            <div className="p-6">
+              <div className="flex items-start gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/20">
+                  <svg className="h-6 w-6 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                    Replace All Repositories
+                  </h3>
+                  <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                    This will update all <span className="font-medium text-gray-900 dark:text-gray-100">{codebases.length} repositories</span> in this workspace to use:
+                  </p>
+                  <div className="mt-2 rounded-lg bg-gray-50 p-2 dark:bg-[#0d1018]">
+                    <div className="text-sm font-medium text-gray-700 dark:text-gray-300">{editRepoSelection.name}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 font-mono truncate">{editRepoSelection.path}</div>
+                  </div>
+                  <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                    This is useful when the codebase path has changed or you need to fix repository references.
+                  </p>
+                </div>
+              </div>
+              {recloneError && (
+                <div className="mt-3 text-xs text-rose-600 dark:text-rose-400">{recloneError}</div>
+              )}
+              <div className="mt-6 flex gap-3">
+                <button
+                  onClick={() => setShowReplaceAllConfirm(false)}
+                  disabled={replacingAll}
+                  className="flex-1 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:bg-[#0d1018] dark:text-gray-300 dark:hover:bg-[#191c28]"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleReplaceAllRepos}
+                  disabled={replacingAll}
+                  className="flex-1 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+                >
+                  {replacingAll ? "Replacing..." : "Replace All"}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
