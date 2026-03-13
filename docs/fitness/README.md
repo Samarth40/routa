@@ -1,45 +1,76 @@
-# Fitness Workflow
+# Architecture Fitness (Rust Testing)
 
-## Purpose
+## Goal
 
-This directory defines fitness functions for engineering quality, with test coverage as a primary signal.
+Use a measurable fitness function to guard Rust quality in AI-driven high-frequency changes:
 
-## Required Flow For Rust Test Work
+- hard gates (must pass)
+- score/radar metrics (must trend better)
+- ratchet policy (no regression on touched areas)
 
-1. Read `AGENTS.md` testing rules.
-2. Read this file (`docs/fitness/README.md`) for fitness gates and commands.
-3. Update the detailed tracker in `docs/fitness/unit-test.md`.
+This follows the direction discussed in issue `#139`.
 
-## Rust Coverage Gate
+## Required Execution Flow
 
-- Preferred metric: line coverage from `cargo llvm-cov`.
-- Fallback metric (only when tooling unavailable): file-level test-marker ratio.
-- Rule: coverage should not decrease for touched Rust crates/files in a PR.
+1. Read `AGENTS.md`.
+2. Use this file as the policy baseline.
+3. Update only key state in `docs/fitness/unit-test.md` (no step-by-step logs).
 
-## Setup
+## Hard Gates (PR)
+
+- Rust tests for changed modules must pass.
+- `cargo clippy --all-targets -- -D warnings` must pass.
+- Coverage on touched crate/module must not regress.
+- If line coverage cannot be collected, fallback proxy metric must not regress.
+
+## Score Metrics (Trend)
+
+- Primary: line/function coverage (`cargo llvm-cov`).
+- Secondary proxy: files-with-tests ratio.
+- Optional: module risk weighting (store/api/core utility).
+
+## Coverage Tooling
+
+Install once:
 
 ```bash
 rustup component add llvm-tools-preview
 cargo install cargo-llvm-cov
 ```
 
-## Commands
+Run:
 
 ```bash
-# npm shortcut
 npm run rust:cov
+npm run rust:cov:lcov
+npm run rust:cov:html
+```
 
-# summary report
+Direct script usage:
+
+```bash
 ./scripts/rust-coverage.sh routa-core summary
-
-# lcov artifact for CI/analysis tools
 ./scripts/rust-coverage.sh routa-core lcov
-
-# html report
 ./scripts/rust-coverage.sh routa-core html
 ```
 
-## Reporting
+## CI Artifacts
 
-- Record baseline, current value, and delta in `docs/fitness/unit-test.md`.
-- If `cargo llvm-cov` is unavailable, record this as a temporary blocker and use fallback metric.
+- coverage summary (stdout)
+- `target/coverage/*.lcov` (if generated)
+- `unit-test.md` key snapshot update (baseline/current/delta)
+
+## Update Rules For `unit-test.md`
+
+Keep only:
+
+- baseline and current metrics
+- target thresholds
+- current phase status
+- top priorities / next batch
+- known blockers
+
+Do not keep:
+
+- command-by-command execution history
+- repeated transient logs
