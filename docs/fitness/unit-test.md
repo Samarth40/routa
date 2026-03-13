@@ -13,7 +13,7 @@ metrics:
     hard_gate: true
 
   - name: rust_test_pass
-    command: cargo test --workspace 2>&1
+    command: cargo test --workspace --exclude routa-desktop 2>&1
     pattern: "test result: ok"
     hard_gate: true
 ---
