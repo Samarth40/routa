@@ -26,6 +26,7 @@ pub mod providers;
 pub mod rpc;
 pub mod schedules;
 pub mod sessions;
+pub mod shared_sessions;
 pub mod skills;
 pub mod skills_catalog;
 pub mod skills_clone;
@@ -57,6 +58,7 @@ pub fn api_router() -> Router<AppState> {
         .nest("/api/skills/clone", skills_clone::router())
         .nest("/api/skills/upload", skills_upload::router())
         .nest("/api/sessions", sessions::router())
+        .nest("/api/shared-sessions", shared_sessions::router())
         .nest("/api/providers", providers::router())
         .nest("/api/providers", provider_models::router())
         .nest("/api/acp", acp_routes::router())
