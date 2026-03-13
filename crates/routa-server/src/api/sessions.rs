@@ -398,6 +398,53 @@ fn consolidate_message_history(notifications: Vec<serde_json::Value>) -> Vec<ser
     result
 }
 
+#[cfg(test)]
+mod tests {
+    use super::consolidate_message_history;
+    use serde_json::json;
+
+    #[test]
+    fn consolidate_message_history_merges_chunks_for_same_session() {
+        let notifications = vec![
+            json!({"sessionId":"s1","update": {"sessionUpdate":"agent_message_chunk","content": {"text":"Hel"}}}),
+            json!({"sessionId":"s1","update": {"sessionUpdate":"agent_message_chunk","content": {"text":"lo"}}}),
+            json!({"sessionId":"s1","update": {"sessionUpdate":"agent_done","content": {"text":"!"}}}),
+        ];
+
+        let merged = consolidate_message_history(notifications);
+
+        assert_eq!(merged.len(), 2);
+        assert_eq!(
+            merged[0]["sessionId"].as_str(),
+            Some("s1")
+        );
+        assert_eq!(
+            merged[0]["update"]["sessionUpdate"].as_str(),
+            Some("agent_message")
+        );
+        assert_eq!(
+            merged[0]["update"]["content"]["text"].as_str(),
+            Some("Hello")
+        );
+    }
+
+    #[test]
+    fn consolidate_message_history_handles_session_switches() {
+        let notifications = vec![
+            json!({"sessionId":"s1","update": {"sessionUpdate":"agent_message_chunk","content": {"text":"A"}}}),
+            json!({"sessionId":"s2","update": {"sessionUpdate":"agent_message_chunk","content": {"text":"B"}}}),
+            json!({"sessionId":"s1","update": {"sessionUpdate":"agent_message_chunk","content": {"text":"C"}}}),
+        ];
+
+        let merged = consolidate_message_history(notifications);
+
+        assert_eq!(merged.len(), 3);
+        assert_eq!(merged[0]["update"]["content"]["text"].as_str(), Some("A"));
+        assert_eq!(merged[1]["update"]["content"]["text"].as_str(), Some("B"));
+        assert_eq!(merged[2]["update"]["content"]["text"].as_str(), Some("C"));
+    }
+}
+
 /// GET /api/sessions/{session_id}/context — Get hierarchical context for a session.
 ///
 /// Returns the session's parent, children, siblings, and recent workspace sessions.

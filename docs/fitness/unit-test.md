@@ -1,74 +1,100 @@
-# Rust Unit-Test Fitness Snapshot
+# Rust 单元测试与集成测试规则（行为驱动版）
 
-- scope: `routa-core + routa-server + routa-rpc + routa-cli`（按系统域分层）
-- phase: `in_progress`
-- hard_gate: `routa-server >= 50%`（持续 ratchet）
+## 适用范围
+- `routa-core`, `routa-server` 为本版主线；`routa-cli`, `routa-rpc` 在联动改动时同步纳入。
 
-- baseline:
-  - `routa-core`: `pending`
-  - `routa-server`: `pending`
-  - `routa-cli`: `pending`
-  - `routa-rpc`: `pending`
+## 评估目标
+- 用例以“行为正确性”计分，不以文件字数或命令日志计分。
+- 每条规则有固定状态，禁止快照式增量字段（`delta` / `phase` / `current`）作为进度依据。
 
-- current: `pending`
-- delta:
-  - `api_use_case_coverage`: `+3`
-  - `api_endpoints_added`: `7`
-  - `negative_cases`: `3`
-- blockers: `pending`
+## 规则清单（逐项可验）
 
-## System Testing Strategy
+### 单元测试（`routa-core`）
+- [ ] store: workspace
+  - status: `TODO`
+  - required: CRUD、查询过滤、归档状态一致性
+  - evidence:
+- [ ] store: codebase
+  - status: `TODO`
+  - required: 唯一性、默认配置、文件索引兼容性
+  - evidence:
+- [ ] store: task
+  - status: `TODO`
+  - required: 状态流转、列映射、并发冲突边界
+  - evidence:
+- [ ] store: agent
+  - status: `TODO`
+  - required: 创建/状态更新/不可变字段保护
+  - evidence:
+- [ ] store: session
+  - status: `TODO`
+  - required: 任务归属、状态持久化、过期清理策略
+  - evidence:
+- [ ] workflow/规则映射层
+  - status: `TODO`
+  - required: 列表/状态转换边界、冲突校验（如同 ID/非法状态）
+  - evidence:
 
-### 1) 单元层（最快捕获逻辑缺陷）
-- `routa-core`: store、解析工具、workflow helper、状态转换、边界条件
-- `routa-server`: helper / mapper / sanitizer 等 deterministic 逻辑
-- `routa-rpc`: schema 转换与 RPC 错误映射
-- `routa-cli`: command 入口和序列化路径
+### 单元测试（`routa-server`）
+- [ ] error contract helpers
+  - status: `TODO`
+  - required: 错误分类与状态码映射一致性
+  - evidence:
+- [ ] 参数校验器 / 清洗函数
+  - status: `TODO`
+  - required: 空值、非法类型、越界输入
+  - evidence:
+- [x] 轻量 handler-level 辅助逻辑
+  - status: `VERIFIED`
+  - required: 会话历史 chunk 合并逻辑正确性
+  - evidence: `crates/routa-server/src/api/sessions.rs`
 
-### 2) API 集成层（use-case 驱动）
-- 以业务闭环为单位，而不是单接口切片。
-- 采用 `start_server` + `reqwest` + `tokio::test`，真实进程内建数据库。
-- 覆盖：
-  - workspace + notes + codebase + tasks 关键流
-  - 参数缺失、非法枚举、冲突状态等负向路径
-  - 结果一致性（读列表/读详情）
+### 集成测试（与 API 行为强绑定）
+- [x] notes 流程
+  - status: `VERIFIED`
+  - required: create/list/get/delete 的成功/失败闭环
+  - evidence: `docs/fitness/rust-api-test.md`
+- [x] tasks 流程
+  - status: `VERIFIED`
+  - required: create/update/status/list/delete + 无效状态更新
+  - evidence: `docs/fitness/rust-api-test.md`
+- [x] codebase/files 流程
+  - status: `VERIFIED`
+  - required: create/update/delete/search + 文件元数据一致性
+  - evidence: `docs/fitness/rust-api-test.md`
+- [x] agents 流程
+  - status: `VERIFIED`
+  - required: list/get/create/delete + invalid status handling
+  - evidence: `docs/fitness/rust-api-test.md`
+- [x] sessions 流程
+  - status: `VERIFIED`
+  - required: get/list/polling + 生命周期错误场景
+  - evidence: `docs/fitness/rust-api-test.md`
 
-### 3) 覆盖率层
-- 指标：`cargo llvm-cov` line coverage。
-- 记录方式：只在 `unit-test.md` 更新 “baseline/current/delta/next” 快照项。
-- 门禁：server >= 50%，否则暂停合并。
+## 一致性要求
+- 同一业务行为修改，必须在本文件添加 `status=VERIFIED` 条目并写明测试文件路径。
+- 阻塞项统一标记为 `BLOCKED`，并写明阻塞原因与负责人。
+- 删除/关闭的规则项后需保留审计历史（可在 issue 记录中补充）。
 
-### 4) 回归与 e2e 补充
-- 高风险链路（UI 或前端依赖）通过 Playwright 截图/回放链路补充。
-- 后端高风险链路通过 API 用例与健康检查最小集回归。
+## 近期优先级
+- P0: `acp` / `agents` / `sessions` / polling 的 API 行为测试补齐
+- P1: `agent` 与 `session` 错误状态回归
+- P2: `task` 与 `codebase` 关键边界场景复测
 
-## Common Failures
+## Common Failures (High Frequency)
 
-- `status` 与 `columnId` 同步冲突
-  - 典型症状：接口返回 400，但错误点未被覆盖
-  - 应对：新增正反向断言并固定消息约束
-
-- 外部依赖污染测试
-  - 典型症状：偶发超时/网络抖动导致用例抖动
-  - 应对：业务测试隔离外部调用，mock/短路优先
-
-- 数据库状态污染
-  - 典型症状：前后测试互相影响
-  - 应对：每用例独立临时数据库，测试后清理
-
-- 文件系统副作用未回收
-  - 典型症状：临时目录残留，导致 CI 磁盘增长
-  - 应对：Drop/teardown 清理 temp 目录
-
-- 命名风格不一致
-  - 典型症状：camelCase 与 snake_case 参数/字段错配
-  - 应对：在 API 用例中同步验证请求体和响应 schema
+- 状态不一致：`task.status` 与 `columnId` 不匹配
+  - 对应修正：统一入口校验，添加冲突用例并固定错误信息
+- 外部依赖触发失败导致超时/抖动
+  - 对应修正：测试时优先隔离外部依赖，避免真实网络请求影响核心路径
+- DB 状态污染
+  - 对应修正：每个测试独立数据库（临时 db_path）并确保销毁
+- 文件系统副作用未清理
+  - 对应修正：临时目录/文件在 `Drop` 或测试尾部清理
+- 查询参数命名不一致（camelCase / snake_case）
+  - 对应修正：接口文档与用例字段统一验证
 
 ## This Batch
-
-- 新增 API 用例文件：`crates/routa-server/tests/rust_api_end_to_end.rs`
-- 关注文件：`docs/fitness/rust-api-test.md`
-- 说明：本批用于系统级通路覆盖，不添加命令执行日志
-- next_batch:
-  - `acp` / `agents` / `sessions` / `polling` use-case
-  - 增加健康态势契约测试（`/api/health`）
+- 新增：`crates/routa-server/tests/rust_api_end_to_end.rs`
+- 入口文件：`docs/fitness/rust-api-test.md`
+- 下一个批次：补 `acp / agents / sessions / polling` 用例与健康检查场景
