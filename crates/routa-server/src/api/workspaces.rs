@@ -32,13 +32,14 @@ async fn list_workspaces(
 async fn get_workspace(
     State(state): State<AppState>,
     axum::extract::Path(id): axum::extract::Path<String>,
-) -> Result<Json<Workspace>, ServerError> {
-    state
+) -> Result<Json<serde_json::Value>, ServerError> {
+    let workspace = state
         .workspace_store
         .get(&id)
         .await?
-        .map(Json)
-        .ok_or_else(|| ServerError::NotFound(format!("Workspace {} not found", id)))
+        .ok_or_else(|| ServerError::NotFound(format!("Workspace {} not found", id)))?;
+    let codebases = state.codebase_store.list_by_workspace(&id).await.unwrap_or_default();
+    Ok(Json(serde_json::json!({ "workspace": workspace, "codebases": codebases })))
 }
 
 #[derive(Debug, Deserialize)]

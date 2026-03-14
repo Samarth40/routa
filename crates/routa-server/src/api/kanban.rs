@@ -361,6 +361,8 @@ async fn decompose_tasks(
             parallel_group: None,
             workspace_id: body.workspace_id.clone(),
             session_id: None,
+            codebase_ids: Vec::new(),
+            worktree_id: None,
             created_at: now,
             updated_at: now,
             completion_summary: None,
