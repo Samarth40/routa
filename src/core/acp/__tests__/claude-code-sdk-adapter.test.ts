@@ -255,6 +255,30 @@ describe("ClaudeCodeSdkAdapter", () => {
       ]);
     });
 
+    it("passes configured MCP servers through to the SDK query", async () => {
+      mockQuery.mockReturnValue(makeStream([]));
+
+      const { handler } = collectNotifications();
+      const adapter = new ClaudeCodeSdkAdapter("/tmp/test-cwd", handler, {
+        mcpServers: {
+          "routa-coordination": {
+            type: "http",
+            url: "http://127.0.0.1:3000/api/mcp?sid=test",
+          },
+        },
+      });
+      await adapter.connect();
+      await adapter.prompt("Use MCP");
+
+      const callArgs = mockQuery.mock.calls[0][0];
+      expect(callArgs.options.mcpServers).toEqual({
+        "routa-coordination": {
+          type: "http",
+          url: "http://127.0.0.1:3000/api/mcp?sid=test",
+        },
+      });
+    });
+
     it("uses the provided native tool allowlist", async () => {
       mockQuery.mockReturnValue(makeStream([]));
 

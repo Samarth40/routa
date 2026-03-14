@@ -1,7 +1,7 @@
 import {AcpProcess} from "@/core/acp/acp-process";
 import {buildConfigFromPreset, buildConfigFromInline, ManagedProcess, NotificationHandler} from "@/core/acp/processer";
 import {ClaudeCodeProcess, buildClaudeCodeConfig, mapClaudeModeToPermissionMode} from "@/core/acp/claude-code-process";
-import {ensureMcpForProvider, providerSupportsMcp} from "@/core/acp/mcp-setup";
+import {ensureMcpForProvider, parseMcpServersFromConfigs, providerSupportsMcp} from "@/core/acp/mcp-setup";
 import {getDefaultRoutaMcpConfig} from "@/core/acp/mcp-config-generator";
 import {OpencodeSdkAdapter, OpencodeSdkDirectAdapter, shouldUseOpencodeAdapter, getOpencodeServerUrl, isOpencodeServerConfigured, isOpencodeDirectApiConfigured} from "@/core/acp/opencode-sdk-adapter";
 import {ClaudeCodeSdkAdapter, shouldUseClaudeCodeSdkAdapter} from "@/core/acp/claude-code-sdk-adapter";
@@ -336,7 +336,10 @@ export class AcpProcessManager {
                 sessionId,
                 cwd,
                 onNotification,
-                { allowedNativeTools },
+                {
+                    allowedNativeTools,
+                    mcpServers: parseMcpServersFromConfigs(mcpConfigs),
+                },
             );
         }
 
@@ -574,8 +577,20 @@ export class AcpProcessManager {
         // Session exists but adapter not in memory - recreate it
         console.log(`[AcpProcessManager] Recreating Claude Code SDK adapter for session: ${sessionId}`);
 
+        let mcpServers: Record<string, unknown> | undefined;
+        try {
+            const mcpResult = await ensureMcpForProvider(
+                "claude",
+                getDefaultRoutaMcpConfig(sessionRecord?.workspaceId, sessionId, sessionRecord?.toolMode),
+            );
+            mcpServers = parseMcpServersFromConfigs(mcpResult.mcpConfigs);
+        } catch (err) {
+            console.warn(`[AcpProcessManager] Failed to rebuild MCP config for ${sessionId}:`, err);
+        }
+
         const adapter = new ClaudeCodeSdkAdapter(cwd, onNotification, {
             allowedNativeTools: sessionRecord?.allowedNativeTools,
+            mcpServers,
         });
         await adapter.connect();
         // Use existing session ID instead of creating new one

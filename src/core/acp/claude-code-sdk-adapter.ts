@@ -126,6 +126,8 @@ export class ClaudeCodeSdkAdapter {
   private _apiKeyOverride: string | undefined;
   /** Optional allowlist for provider-native tools such as Bash/Read/Edit. */
   private _allowedNativeTools: string[];
+  /** Optional MCP servers exposed to Claude Code via the SDK. */
+  private _mcpServers?: Record<string, unknown>;
   /** Pending AskUserQuestion requests waiting for a UI response. */
   private pendingUserInputRequests = new Map<string, PendingUserInputRequest>();
   /** Completed AskUserQuestion responses keyed by tool call ID. */
@@ -142,6 +144,7 @@ export class ClaudeCodeSdkAdapter {
       baseUrl?: string;
       apiKey?: string;
       allowedNativeTools?: string[];
+      mcpServers?: Record<string, unknown>;
       lifecycleNotifier?: LifecycleNotifier;
     }
   ) {
@@ -152,6 +155,7 @@ export class ClaudeCodeSdkAdapter {
     this._baseUrlOverride = options?.baseUrl;
     this._apiKeyOverride = options?.apiKey;
     this._allowedNativeTools = options?.allowedNativeTools ?? ["Skill", "Read", "Write", "Edit", "Bash", "Glob", "Grep"];
+    this._mcpServers = options?.mcpServers;
     this.lifecycleNotifier = options?.lifecycleNotifier;
   }
 
@@ -318,6 +322,7 @@ export class ClaudeCodeSdkAdapter {
           ...process.env,
           CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR ?? "/tmp/.claude",
         },
+        ...(this._mcpServers ? { mcpServers: this._mcpServers } : {}),
         ...(shouldContinue && { continue: true }),
         persistSession: true,
       };
@@ -508,6 +513,7 @@ export class ClaudeCodeSdkAdapter {
           ...process.env,
           CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR ?? "/tmp/.claude",
         },
+        ...(this._mcpServers ? { mcpServers: this._mcpServers } : {}),
         // Session continuity: use `continue: true` for follow-up prompts
         // to maintain conversation history within the same session.
         // For the first prompt, we let the SDK create a new session.

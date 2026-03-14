@@ -629,6 +629,31 @@ export function isMcpConfigured(mcpConfigs?: string[]): boolean {
   return !!mcpConfigs && mcpConfigs.length > 0;
 }
 
+/**
+ * Parse Claude-style inline MCP config JSON into the SDK's `mcpServers` object.
+ * Ignores unreadable entries so callers can fall back safely.
+ */
+export function parseMcpServersFromConfigs(mcpConfigs?: string[]): Record<string, unknown> | undefined {
+  if (!mcpConfigs || mcpConfigs.length === 0) {
+    return undefined;
+  }
+
+  const merged: Record<string, unknown> = {};
+
+  for (const rawConfig of mcpConfigs) {
+    try {
+      const parsed = JSON.parse(rawConfig) as { mcpServers?: Record<string, unknown> } | null;
+      if (parsed?.mcpServers && typeof parsed.mcpServers === "object") {
+        Object.assign(merged, parsed.mcpServers);
+      }
+    } catch {
+      // Ignore non-inline configs; Claude SDK path only relies on JSON strings.
+    }
+  }
+
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
 export function getMcpStatus(
   providerId: string,
   mcpConfigs?: string[],

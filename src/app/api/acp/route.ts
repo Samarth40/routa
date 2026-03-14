@@ -23,7 +23,7 @@ import { getHttpSessionStore } from "@/core/acp/http-session-store";
 import { getStandardPresets, getPresetById, resolveCommand } from "@/core/acp/acp-presets";
 import { which } from "@/core/acp/utils";
 import { fetchRegistry, detectPlatformTarget } from "@/core/acp/acp-registry";
-import { ensureMcpForProvider } from "@/core/acp/mcp-setup";
+import { ensureMcpForProvider, parseMcpServersFromConfigs } from "@/core/acp/mcp-setup";
 import { getDefaultRoutaMcpConfig } from "@/core/acp/mcp-config-generator";
 import { v4 as uuidv4 } from "uuid";
 import { isServerlessEnvironment } from "@/core/acp/api-based-providers";
@@ -471,6 +471,7 @@ export async function POST(request: NextRequest) {
               authJson,
             );
           } else if (isClaudeCodeSdk) {
+            const mcpConfigs = await buildMcpConfigForClaude(workspaceId, sessionId, toolMode);
             const instanceConfig: AgentInstanceConfig = {
               model,
               provider: "claude-code-sdk",
@@ -479,6 +480,7 @@ export async function POST(request: NextRequest) {
               baseUrl,
               apiKey,
               allowedNativeTools,
+              mcpServers: parseMcpServersFromConfigs(mcpConfigs),
             };
             acpSessionId = await manager.createClaudeCodeSdkSession(
               sessionId,

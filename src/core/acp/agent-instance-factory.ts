@@ -50,6 +50,8 @@ export interface AgentInstanceConfig {
   apiKey?: string;
   /** Optional allowlist for provider-native tools such as Bash/Read/Edit */
   allowedNativeTools?: string[];
+  /** Optional MCP servers exposed to the adapter session */
+  mcpServers?: Record<string, unknown>;
 }
 
 /**
@@ -180,6 +182,7 @@ export class AgentInstanceFactory {
       baseUrl: resolved.baseUrl,
       apiKey: resolved.apiKey,
       allowedNativeTools: resolved.allowedNativeTools,
+      mcpServers: resolved.mcpServers,
       lifecycleNotifier,
     });
 
