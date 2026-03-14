@@ -50,6 +50,16 @@ export interface KanbanColumnAutomationInfo {
   role?: string;
   specialistId?: string;
   specialistName?: string;
+  transitionType?: "entry" | "exit" | "both";
+  requiredArtifacts?: ("screenshot" | "test_results" | "code_diff")[];
+  autoAdvanceOnSuccess?: boolean;
+}
+
+export interface KanbanBoardQueueInfo {
+  runningCount: number;
+  queuedCount: number;
+  queuedCardIds: string[];
+  queuedPositions: Record<string, number>;
 }
 
 export interface KanbanColumnInfo {
@@ -67,6 +77,8 @@ export interface KanbanBoardInfo {
   workspaceId: string;
   name: string;
   isDefault: boolean;
+  sessionConcurrencyLimit?: number;
+  queue?: KanbanBoardQueueInfo;
   columns: KanbanColumnInfo[];
   createdAt: string;
   updatedAt: string;

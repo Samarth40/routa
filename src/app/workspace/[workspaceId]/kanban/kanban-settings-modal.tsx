@@ -28,7 +28,11 @@ export interface KanbanSettingsModalProps {
   availableProviders: AcpProviderInfo[];
   specialists: SpecialistOption[];
   onClose: () => void;
-  onSave: (visibleColumns: string[], columnAutomation: Record<string, ColumnAutomationConfig>) => Promise<void>;
+  onSave: (
+    visibleColumns: string[],
+    columnAutomation: Record<string, ColumnAutomationConfig>,
+    sessionConcurrencyLimit: number,
+  ) => Promise<void>;
 }
 
 const ROLE_OPTIONS = ["CRAFTER", "ROUTA", "GATE", "DEVELOPER"];
@@ -44,12 +48,13 @@ export function KanbanSettingsModal({
 }: KanbanSettingsModalProps) {
   const [visibleColumns, setVisibleColumns] = useState<string[]>(initialVisibleColumns);
   const [columnAutomation, setColumnAutomation] = useState<Record<string, ColumnAutomationConfig>>(initialColumnAutomation);
+  const [sessionConcurrencyLimit, setSessionConcurrencyLimit] = useState<number>(board.sessionConcurrencyLimit ?? 1);
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      await onSave(visibleColumns, columnAutomation);
+      await onSave(visibleColumns, columnAutomation, Math.max(1, Math.floor(sessionConcurrencyLimit)));
     } finally {
       setSaving(false);
     }
@@ -83,6 +88,24 @@ export function KanbanSettingsModal({
           availableProviders={availableProviders}
           specialists={specialists}
         />
+
+        <div className="space-y-3 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Session Queue</h3>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Limit how many ACP task sessions can run in parallel for this board. Extra cards wait in queue.
+          </p>
+          <div className="flex items-center gap-3">
+            <label className="text-xs text-gray-500 dark:text-gray-400">Max concurrent sessions</label>
+            <input
+              type="number"
+              min={1}
+              max={20}
+              value={sessionConcurrencyLimit}
+              onChange={(event) => setSessionConcurrencyLimit(Math.max(1, Number.parseInt(event.target.value || "1", 10) || 1))}
+              className="w-24 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0d1018] px-2 py-1.5 text-sm"
+            />
+          </div>
+        </div>
 
         {/* Footer */}
         <div className="mt-6 flex justify-end gap-2">

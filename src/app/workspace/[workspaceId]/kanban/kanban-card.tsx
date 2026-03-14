@@ -19,6 +19,7 @@ export interface KanbanCardProps {
   codebases: CodebaseData[];
   allCodebaseIds: string[];
   worktreeCache: Record<string, WorktreeInfo>;
+  queuePosition?: number;
   onDragStart: () => void;
   onOpenDetail: () => void;
   onOpenSession: (sessionId: string | null) => void;
@@ -38,6 +39,7 @@ export function KanbanCard({
   codebases,
   allCodebaseIds,
   worktreeCache,
+  queuePosition,
   onDragStart,
   onOpenDetail,
   onOpenSession,
@@ -50,8 +52,8 @@ export function KanbanCard({
   const sessionError = linkedSession?.acpError;
   const canRetry = Boolean(task.assignedProvider) && (
     sessionStatus === "error" || (!task.triggerSessionId && task.columnId === "dev")
-  );
-  const canRun = Boolean(task.assignedProvider) && !task.triggerSessionId && task.columnId !== "done";
+  ) && !queuePosition;
+  const canRun = Boolean(task.assignedProvider) && !task.triggerSessionId && task.columnId !== "done" && !queuePosition;
   const [showAssignment, setShowAssignment] = useState(false);
 
   const assignedProvider = availableProviders.find((provider) => provider.id === task.assignedProvider);
@@ -225,6 +227,7 @@ export function KanbanCard({
         sessionError={sessionError}
         canRun={canRun}
         canRetry={canRetry}
+        queuePosition={queuePosition}
         stopCardInteraction={stopCardInteraction}
         onOpenDetail={onOpenDetail}
         onOpenSession={onOpenSession}
@@ -382,6 +385,7 @@ interface CardFooterProps {
   sessionError?: string;
   canRun: boolean;
   canRetry: boolean;
+  queuePosition?: number;
   stopCardInteraction: (event: { stopPropagation: () => void }) => void;
   onOpenDetail: () => void;
   onOpenSession: (sessionId: string | null) => void;
@@ -394,6 +398,7 @@ function CardFooter({
   sessionError,
   canRun,
   canRetry,
+  queuePosition,
   stopCardInteraction,
   onOpenDetail,
   onOpenSession,
@@ -405,6 +410,8 @@ function CardFooter({
         <div className="truncate text-gray-400 dark:text-gray-500">
           {sessionStatus === "connecting"
             ? "Session starting..."
+            : queuePosition
+              ? `Queued #${queuePosition}`
             : sessionStatus === "error"
               ? (sessionError ?? "Session failed")
               : task.lastSyncError
@@ -426,6 +433,13 @@ function CardFooter({
             </span>
           </div>
         )}
+        {!sessionStatus && queuePosition ? (
+          <div className="mt-1 flex items-center gap-1.5">
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+              queued
+            </span>
+          </div>
+        ) : null}
       </div>
       <div className="flex items-center gap-2">
         {canRun && !canRetry && (

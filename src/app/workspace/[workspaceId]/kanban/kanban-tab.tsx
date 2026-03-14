@@ -263,6 +263,8 @@ export function KanbanTab({ workspaceId, boards, tasks, sessions, providers, spe
     () => boards.find((item) => item.id === selectedBoardId) ?? null,
     [boards, selectedBoardId],
   );
+  const boardQueue = board?.queue;
+  const queuedPositions = boardQueue?.queuedPositions ?? {};
 
   // Initialize visible columns when board changes
   useEffect(() => {
@@ -862,6 +864,20 @@ export function KanbanTab({ workspaceId, boards, tasks, sessions, providers, spe
         </div>
       </div>
 
+      {board && (
+        <div className="mb-3 flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
+          <span className="rounded-full bg-gray-100 px-2.5 py-1 dark:bg-[#191c28]">
+            Limit {board.sessionConcurrencyLimit ?? 1}
+          </span>
+          <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
+            Running {boardQueue?.runningCount ?? 0}
+          </span>
+          <span className="rounded-full bg-amber-100 px-2.5 py-1 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+            Queued {boardQueue?.queuedCount ?? 0}
+          </span>
+        </div>
+      )}
+
       <div className="flex-1 min-h-0 flex gap-4">
         <div className={`${agentPanelOpen && agentSessionId ? "min-w-0 flex-1" : "w-full"} flex min-h-0 flex-col`}>
           <div className="flex-1 min-h-0 overflow-auto pb-2">
@@ -902,6 +918,7 @@ export function KanbanTab({ workspaceId, boards, tasks, sessions, providers, spe
                             codebases={codebases}
                             allCodebaseIds={allCodebaseIds}
                             worktreeCache={worktreeCache}
+                            queuePosition={queuedPositions[task.id]}
                             onDragStart={() => setDragTaskId(task.id)}
                             onOpenDetail={() => openTaskDetail(task)}
                             onOpenSession={openSession}
@@ -1102,7 +1119,7 @@ export function KanbanTab({ workspaceId, boards, tasks, sessions, providers, spe
           availableProviders={availableProviders}
           specialists={specialists}
           onClose={() => setShowSettings(false)}
-          onSave={async (newVisibleColumns, newColumnAutomation) => {
+          onSave={async (newVisibleColumns, newColumnAutomation, sessionConcurrencyLimit) => {
             // Merge automation config and visibility into columns
             const updatedColumns = board.columns.map((col) => ({
               ...col,
@@ -1115,7 +1132,7 @@ export function KanbanTab({ workspaceId, boards, tasks, sessions, providers, spe
             const response = await fetch(`/api/kanban/boards/${encodeURIComponent(board.id)}`, {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ columns: updatedColumns }),
+              body: JSON.stringify({ columns: updatedColumns, sessionConcurrencyLimit }),
             });
 
             if (!response.ok) {
