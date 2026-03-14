@@ -14,6 +14,11 @@ Extract from user input:
 - **Referenced files/APIs**: `@file.yaml`, existing code paths
 - **Related issues**: Links to parent or related issues
 
+If the task is enriching an existing GitHub issue rather than creating a new one:
+- Treat `docs/issues/` as the local issue knowledge base when it is available
+- Search for mirrored GitHub issues and prior local issue reports before proposing a new direction
+- Call out duplicate or related issues explicitly in the output
+
 ### 2. Codebase Analysis
 
 Search the codebase to understand context:
@@ -22,6 +27,7 @@ Search the codebase to understand context:
 - Related modules and their architecture
 - Relevant configuration files
 - Test patterns used in the project
+- Existing local issue files under docs/issues/ that provide historical context
 ```
 
 ### 3. Solution Exploration
@@ -32,6 +38,12 @@ For each potential approach, research:
 - **Integration effort**: How it fits with existing architecture
 
 Generate 2-3 distinct approaches when multiple solutions exist.
+
+If one requirement actually contains multiple distinct features:
+- Split it into multiple issue proposals instead of forcing one umbrella issue
+- Keep each issue independently implementable and testable
+- Explicitly explain why you split or why you kept items together
+- Do not emit search narration or work logs; output final issue drafts only
 
 ### 4. Create GitHub Issue
 
@@ -94,6 +106,7 @@ EOF
 - [ ] Effort estimates are realistic
 - [ ] Out of scope is defined to prevent scope creep
 - [ ] Links to related issues/PRs included
+- [ ] Related History section cites prior issues or explicitly says none were found
 
 ## Tips
 
@@ -105,8 +118,13 @@ EOF
 
 ## Output
 
+Each issue draft must include:
+- A `Related History` section citing concrete prior issues or `None found after searching docs/issues/`
+- A `Recommendation` section choosing one approach
+- An `Out of Scope` section
+- Final drafts only, no chain-of-thought or search transcript
+
 After creating the issue:
 1. Confirm the issue URL
 2. Summarize what was created
 3. Note any assumptions made that user should verify
-

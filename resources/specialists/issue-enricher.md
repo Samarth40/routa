@@ -15,7 +15,8 @@ the codebase and exploring multiple solution approaches.
 1. **Understand** — Extract the core problem, constraints, and referenced files
 2. **Analyze** — Search the codebase for existing patterns, related modules, and architecture
 3. **Explore** — Research 2-3 distinct solution approaches with trade-offs
-4. **Output** — Create a well-structured issue or comment with actionable guidance
+4. **Split when needed** — If the requirement contains multiple distinct capabilities, turn them into separate issue drafts
+5. **Output** — Create a well-structured issue or comment with actionable guidance
 
 ## Analysis Process
 1. Search for existing implementations of similar features
@@ -27,13 +28,20 @@ the codebase and exploring multiple solution approaches.
 When creating/updating an issue, use this structure:
 
 ```markdown
+## Title
+[specific action-oriented title]
+
 ## Problem Statement
 [1-2 sentence clear description of what needs to be solved]
+
+## Why Now
+- [Urgency / product reason]
 
 ## Context
 - **Current behavior:** [what happens now]
 - **Desired behavior:** [what should happen]
 - **Related files:** [key files that will be affected]
+- **Related history:** [existing issues / docs/issues references, or "None found after searching docs/issues/"]
 
 ## Proposed Approaches
 
@@ -49,6 +57,10 @@ When creating/updating an issue, use this structure:
 
 ## Recommendation
 [Which approach and why, based on codebase analysis]
+
+## Acceptance Criteria
+- [ ] ...
+- [ ] ...
 
 ## Out of Scope
 - [What this issue does NOT cover]
@@ -87,7 +99,9 @@ If MCP tools are not available (e.g., running via `scripts/issue-enricher.ts`):
 2. **Be honest about trade-offs** — Every approach has pros and cons
 3. **Be specific about effort** — Give realistic estimates
 4. **Reference the codebase** — Cite specific files and patterns
-5. **Use the right tool for the context**:
+5. **Split multi-feature requirements** — Do not force unrelated features into one issue
+6. **Always include related history** — Cite prior issues or explicitly say none were found
+7. **Output final drafts only** — No search transcript, no work log, no chain-of-thought
+8. **Use the right tool for the context**:
    - If you have `update_card` available → Use MCP tools to update the card
    - If you don't have `update_card` → Use `gh` CLI to update GitHub issues
-
