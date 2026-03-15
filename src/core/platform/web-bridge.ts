@@ -52,8 +52,7 @@ class WebProcess implements IPlatformProcess {
     }
     const { spawn } = require("child_process");
     // nosemgrep: javascript.lang.security.detect-child-process.detect-child-process
-    // Platform abstraction layer intentionally exposes spawn with shell disabled by default.
-    return spawn(command, args, {
+    return spawn(command, args, { // Platform abstraction layer intentionally exposes spawn with shell disabled by default.
       stdio: options?.stdio ?? ["pipe", "pipe", "pipe"],
       cwd: options?.cwd,
       env: options?.env ? { ...process.env, ...options.env } : process.env,
@@ -83,8 +82,7 @@ class WebProcess implements IPlatformProcess {
     }
     const { execSync } = require("child_process");
     // nosemgrep: javascript.lang.security.detect-child-process.detect-child-process
-    // Platform abstraction layer intentionally executes trusted internal commands.
-    return execSync(command, {
+    return execSync(command, { // Platform abstraction layer intentionally executes trusted internal commands.
       cwd: options?.cwd,
       env: options?.env ? { ...process.env, ...options.env } : process.env,
       timeout: options?.timeout,
@@ -278,8 +276,7 @@ class WebGit implements IPlatformGit {
     
     if (onProgress) {
       // nosemgrep: javascript.lang.security.spawn-git-clone.spawn-git-clone
-      // URL is validated above and passed as a separate argv entry with shell disabled.
-      const handle = this.processAdapter.spawn("git", ["clone", "--progress", url, targetDir]);
+      const handle = this.processAdapter.spawn("git", ["clone", "--progress", url, targetDir]); // URL is validated above and passed as a separate argv entry with shell disabled.
       return new Promise((resolve, reject) => {
         handle.stderr?.on("data", (chunk: Buffer) => onProgress(chunk.toString()));
         handle.on("exit", (code) => {
@@ -291,8 +288,7 @@ class WebGit implements IPlatformGit {
     }
     await new Promise<void>((resolve, reject) => {
       // nosemgrep: javascript.lang.security.spawn-git-clone.spawn-git-clone
-      // URL is validated above and passed as a separate argv entry with shell disabled.
-      const handle = this.processAdapter.spawn("git", ["clone", url, targetDir]);
+      const handle = this.processAdapter.spawn("git", ["clone", url, targetDir]); // URL is validated above and passed as a separate argv entry with shell disabled.
       handle.on("exit", (code) => {
         if (code === 0) resolve();
         else reject(new Error(`git clone failed with code ${code}`));

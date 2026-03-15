@@ -88,8 +88,7 @@ export function safeSpawn(
   options?: SpawnOptions
 ) {
   // nosemgrep: javascript.lang.security.detect-child-process.detect-child-process
-  // Centralized process wrapper. Callers must validate command/args and shell stays disabled.
-  return spawn(command, args, {
+  return spawn(command, args, { // Centralized process wrapper. Callers must validate command/args and shell stays disabled.
     ...options,
     shell: false, // Never use shell to prevent injection
   });

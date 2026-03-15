@@ -435,8 +435,7 @@ class TauriGit implements IPlatformGit {
     
     if (onProgress) {
       // nosemgrep: javascript.lang.security.spawn-git-clone.spawn-git-clone
-      // URL is validated above and passed as a separate argv entry.
-      const handle = this.processAdapter.spawn("git", ["clone", "--progress", url, targetDir]);
+      const handle = this.processAdapter.spawn("git", ["clone", "--progress", url, targetDir]); // URL is validated above and passed as a separate argv entry.
       return new Promise((resolve, reject) => {
         handle.stderr?.on("data", (chunk: Buffer) => onProgress(chunk.toString()));
         handle.on("exit", (code) => {
@@ -448,8 +447,7 @@ class TauriGit implements IPlatformGit {
     }
     await new Promise<void>((resolve, reject) => {
       // nosemgrep: javascript.lang.security.spawn-git-clone.spawn-git-clone
-      // URL is validated above and passed as a separate argv entry.
-      const handle = this.processAdapter.spawn("git", ["clone", url, targetDir]);
+      const handle = this.processAdapter.spawn("git", ["clone", url, targetDir]); // URL is validated above and passed as a separate argv entry.
       handle.on("exit", (code) => {
         if (code === 0) resolve();
         else reject(new Error(`git clone failed with code ${code}`));
