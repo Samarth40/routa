@@ -47,11 +47,11 @@ def main() -> int:
     master_fd, slave_fd = pty.openpty()
     set_winsize(slave_fd, args.rows, args.cols)
 
-    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
     # Command is passed as argv list (not shell string) from trusted CLI invocation.
     # This script is only called internally by the Routa platform, not exposed to external users.
+    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
     child = subprocess.Popen(
-        command,
+        command,  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
         stdin=slave_fd,
         stdout=slave_fd,
         stderr=slave_fd,
