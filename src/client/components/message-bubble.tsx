@@ -85,7 +85,7 @@ export function MessageBubble({
                     data={message.content}
                     exited={message.terminalExited}
                     exitCode={message.terminalExitCode}
-                    interactive={!message.terminalExited && Boolean(onTerminalInput)}
+                    interactive={Boolean(message.terminalInteractive) && !message.terminalExited && Boolean(onTerminalInput)}
                     onInput={(data) => onTerminalInput?.(message.terminalId ?? message.id, data)}
                     onResize={(cols, rows) => onTerminalResize?.(message.terminalId ?? message.id, cols, rows)}
                 />

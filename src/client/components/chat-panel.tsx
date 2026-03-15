@@ -57,6 +57,7 @@ export interface ChatMessage {
   terminalId?: string;
   terminalCommand?: string;
   terminalArgs?: string[];
+  terminalInteractive?: boolean;
   terminalExited?: boolean;
   terminalExitCode?: number | null;
 }

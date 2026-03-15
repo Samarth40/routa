@@ -27,12 +27,14 @@ class FakeProcess extends EventEmitter implements IProcessHandle {
 }
 
 const spawnMock = vi.fn();
+const execSyncMock = vi.fn(() => "/usr/bin/python3\n");
 
 vi.mock("@/core/platform", () => ({
   getServerBridge: () => ({
     process: {
       isAvailable: () => true,
       spawn: spawnMock,
+      execSync: execSyncMock,
     },
   }),
 }));
@@ -46,6 +48,7 @@ describe("TerminalManager", () => {
     process = new FakeProcess();
     spawnMock.mockReset();
     spawnMock.mockReturnValue(process);
+    execSyncMock.mockClear();
   });
 
   it("writes browser input back to the terminal process", () => {
@@ -59,7 +62,12 @@ describe("TerminalManager", () => {
 
     manager.write(result.terminalId, "ls -la\n");
 
-    expect(process.stdin.writes).toEqual(["ls -la\n"]);
+    expect(process.stdin.writes).toEqual([
+      `${JSON.stringify({
+        type: "input",
+        data: Buffer.from("ls -la\n", "utf-8").toString("base64"),
+      })}\n`,
+    ]);
   });
 
   it("tracks resize metadata without requiring a PTY backend", () => {
@@ -70,5 +78,8 @@ describe("TerminalManager", () => {
     );
 
     expect(() => manager.resize(result.terminalId, 120, 40)).not.toThrow();
+    expect(process.stdin.writes[0]).toBe(
+      `${JSON.stringify({ type: "resize", cols: 120, rows: 40 })}\n`,
+    );
   });
 });

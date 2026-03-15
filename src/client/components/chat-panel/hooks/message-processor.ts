@@ -184,6 +184,7 @@ export function processUpdate(
           terminalId,
           terminalCommand: termCommand,
           terminalArgs: termArgs,
+          terminalInteractive: true,
           terminalExited: false,
           terminalExitCode: null,
         });
@@ -205,6 +206,7 @@ export function processUpdate(
             content: termData,
             timestamp: new Date(),
             terminalId,
+            terminalInteractive: true,
             terminalExited: false,
             terminalExitCode: null,
           });
@@ -243,6 +245,7 @@ export function processUpdate(
             terminalId: processTermId,
             terminalCommand: processDisplayName ?? "Agent Process",
             terminalArgs: processSource ? [processSource] : undefined,
+            terminalInteractive: false,
             terminalExited: false,
             terminalExitCode: null,
           });
@@ -649,4 +652,3 @@ export function processHistoryToMessages(
 
   return messages;
 }
-

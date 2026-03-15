@@ -11,6 +11,8 @@
  * Web (Node.js), Tauri, and Electron environments.
  */
 
+import path from "node:path";
+
 import type { IProcessHandle } from "@/core/platform/interfaces";
 import { getServerBridge } from "@/core/platform";
 
@@ -31,11 +33,15 @@ interface ManagedTerminal {
   createdAt: Date;
   cols?: number;
   rows?: number;
+  usesPtyBridge: boolean;
+  helperStdoutBuffer?: string;
+  exitNotified?: boolean;
 }
 
 export class TerminalManager {
   private terminals = new Map<string, ManagedTerminal>();
   private terminalCounter = 0;
+  private ptyBridgeCommand: string | null | undefined;
 
   /**
    * Create a terminal process.
@@ -82,16 +88,29 @@ export class TerminalManager {
       throw new Error("Process spawning is not available on this platform");
     }
 
-    const proc = bridge.process.spawn(command, args, {
-      stdio: ["pipe", "pipe", "pipe"],
-      cwd,
-      env: {
-        ...env,
-        FORCE_COLOR: "1",
-        TERM: "xterm-256color",
-      },
-      shell: true,
-    });
+    const mergedEnv = {
+      ...env,
+      FORCE_COLOR: "1",
+      TERM: "xterm-256color",
+    };
+    const usePtyBridge = this.canUsePtyBridge(bridge.process);
+    const proc = usePtyBridge
+      ? bridge.process.spawn(
+          this.getPtyBridgeCommand(bridge.process)!,
+          this.buildPtyBridgeArgs(command, args, params),
+          {
+            stdio: ["pipe", "pipe", "pipe"],
+            cwd,
+            env: mergedEnv,
+            shell: false,
+          },
+        )
+      : bridge.process.spawn(command, args, {
+          stdio: ["pipe", "pipe", "pipe"],
+          cwd,
+          env: mergedEnv,
+          shell: true,
+        });
 
     const output = "";
     let exitResolve: (code: number) => void;
@@ -110,46 +129,27 @@ export class TerminalManager {
       createdAt: new Date(),
       cols: typeof params.cols === "number" ? params.cols : undefined,
       rows: typeof params.rows === "number" ? params.rows : undefined,
+      usesPtyBridge: usePtyBridge,
+      helperStdoutBuffer: "",
+      exitNotified: false,
     };
 
-    // Capture stdout
-    proc.stdout?.on("data", (chunk: Buffer) => {
-      const data = chunk.toString("utf-8");
-      managed.output += data;
-
-      // Forward output to client via notification
-      emitNotification({
-        jsonrpc: "2.0",
-        method: "session/update",
-        params: {
-          sessionId,
-          update: {
-            sessionUpdate: "terminal_output",
-            terminalId,
-            data,
-          },
-        },
+    if (usePtyBridge) {
+      proc.stdout?.on("data", (chunk: Buffer) => {
+        this.handlePtyBridgeStdout(managed, chunk, emitNotification);
       });
-    });
+    } else {
+      // Capture stdout
+      proc.stdout?.on("data", (chunk: Buffer) => {
+        const data = chunk.toString("utf-8");
+        this.appendOutput(managed, data, emitNotification);
+      });
+    }
 
     // Capture stderr (merge into terminal output)
     proc.stderr?.on("data", (chunk: Buffer) => {
       const data = chunk.toString("utf-8");
-      managed.output += data;
-
-      // Forward stderr as terminal output too
-      emitNotification({
-        jsonrpc: "2.0",
-        method: "session/update",
-        params: {
-          sessionId,
-          update: {
-            sessionUpdate: "terminal_output",
-            terminalId,
-            data,
-          },
-        },
-      });
+      this.appendOutput(managed, data, emitNotification);
     });
 
     // Handle process exit
@@ -157,23 +157,8 @@ export class TerminalManager {
       console.log(
         `[TerminalManager] Terminal ${terminalId} exited: code=${code}, signal=${signal}`
       );
-      managed.exitCode = code ?? (signal ? 128 : 0);
-      managed.exited = true;
-      exitResolve!(managed.exitCode);
-
-      // Notify client of terminal exit
-      emitNotification({
-        jsonrpc: "2.0",
-        method: "session/update",
-        params: {
-          sessionId,
-          update: {
-            sessionUpdate: "terminal_exited",
-            terminalId,
-            exitCode: managed.exitCode,
-          },
-        },
-      });
+      this.markExited(managed, code ?? (signal ? 128 : 0), emitNotification);
+      exitResolve!(managed.exitCode ?? 0);
     });
 
     proc.on("error", (err) => {
@@ -213,6 +198,14 @@ export class TerminalManager {
       throw new Error("Terminal is not writable");
     }
 
+    if (terminal.usesPtyBridge) {
+      terminal.process.stdin.write(`${JSON.stringify({
+        type: "input",
+        data: Buffer.from(data, "utf-8").toString("base64"),
+      })}\n`);
+      return;
+    }
+
     terminal.process.stdin.write(data);
   }
 
@@ -222,11 +215,138 @@ export class TerminalManager {
       throw new Error("Terminal not found");
     }
 
-    // The web ACP terminal uses stdio pipes instead of a PTY, so resize is
-    // metadata-only for now. Keeping the call path allows the browser client
-    // to stay aligned with the desktop PTY API.
     terminal.cols = typeof cols === "number" ? cols : terminal.cols;
     terminal.rows = typeof rows === "number" ? rows : terminal.rows;
+    if (terminal.usesPtyBridge && terminal.process.stdin?.writable) {
+      terminal.process.stdin.write(`${JSON.stringify({
+        type: "resize",
+        cols: terminal.cols,
+        rows: terminal.rows,
+      })}\n`);
+    }
+  }
+
+  private appendOutput(
+    terminal: ManagedTerminal,
+    data: string,
+    emitNotification: TerminalNotificationEmitter,
+  ): void {
+    terminal.output += data;
+    emitNotification({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: terminal.sessionId,
+        update: {
+          sessionUpdate: "terminal_output",
+          terminalId: terminal.terminalId,
+          data,
+        },
+      },
+    });
+  }
+
+  private markExited(
+    terminal: ManagedTerminal,
+    exitCode: number,
+    emitNotification: TerminalNotificationEmitter,
+  ): void {
+    if (terminal.exitNotified) return;
+    terminal.exitCode = exitCode;
+    terminal.exited = true;
+    terminal.exitNotified = true;
+    emitNotification({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: terminal.sessionId,
+        update: {
+          sessionUpdate: "terminal_exited",
+          terminalId: terminal.terminalId,
+          exitCode,
+        },
+      },
+    });
+  }
+
+  private handlePtyBridgeStdout(
+    terminal: ManagedTerminal,
+    chunk: Buffer,
+    emitNotification: TerminalNotificationEmitter,
+  ): void {
+    terminal.helperStdoutBuffer = `${terminal.helperStdoutBuffer ?? ""}${chunk.toString("utf-8")}`;
+    const lines = terminal.helperStdoutBuffer.split("\n");
+    terminal.helperStdoutBuffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+
+      try {
+        const frame = JSON.parse(trimmed) as
+          | { type: "output"; data: string }
+          | { type: "exit"; exitCode?: number };
+        if (frame.type === "output" && typeof frame.data === "string") {
+          this.appendOutput(
+            terminal,
+            Buffer.from(frame.data, "base64").toString("utf-8"),
+            emitNotification,
+          );
+        }
+        if (frame.type === "exit") {
+          this.markExited(terminal, frame.exitCode ?? 0, emitNotification);
+        }
+      } catch {
+        this.appendOutput(terminal, `${trimmed}\n`, emitNotification);
+      }
+    }
+  }
+
+  private canUsePtyBridge(processAdapter: ReturnType<typeof getServerBridge>["process"]): boolean {
+    return process.platform !== "win32" && Boolean(this.getPtyBridgeCommand(processAdapter));
+  }
+
+  private getPtyBridgeCommand(
+    processAdapter: ReturnType<typeof getServerBridge>["process"],
+  ): string | null {
+    if (this.ptyBridgeCommand !== undefined) {
+      return this.ptyBridgeCommand;
+    }
+
+    for (const candidate of ["python3", "python"]) {
+      if (typeof processAdapter.execSync !== "function") {
+        break;
+      }
+      try {
+        const resolved = processAdapter.execSync(`which ${candidate}`).trim().split("\n")[0];
+        if (resolved) {
+          this.ptyBridgeCommand = resolved;
+          return resolved;
+        }
+      } catch {
+        // Try next candidate.
+      }
+    }
+
+    this.ptyBridgeCommand = null;
+    return null;
+  }
+
+  private buildPtyBridgeArgs(
+    command: string,
+    args: string[],
+    params: Record<string, unknown>,
+  ): string[] {
+    const helperPath = path.resolve(process.cwd(), "scripts/pty-bridge.py");
+    const bridgeArgs = [helperPath];
+    if (typeof params.cols === "number") {
+      bridgeArgs.push("--cols", String(params.cols));
+    }
+    if (typeof params.rows === "number") {
+      bridgeArgs.push("--rows", String(params.rows));
+    }
+    bridgeArgs.push("--", command, ...args);
+    return bridgeArgs;
   }
 
   /**
