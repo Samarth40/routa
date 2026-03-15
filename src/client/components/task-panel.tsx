@@ -17,6 +17,7 @@ import { useState, useRef, useEffect } from "react";
 import type { ParsedTask } from "../utils/task-block-parser";
 import { MarkdownViewer } from "./markdown/markdown-viewer";
 import { MermaidRenderer } from "./markdown/mermaid-renderer";
+import { normalizeThoughtContent } from "./chat-panel/thought-content";
 
 // ─── Types ──────────────────────────────────────────────────────────────
 
@@ -430,6 +431,9 @@ export function CraftersView({
 
 function CrafterMessageBubble({ message }: { message: CrafterMessage }) {
   const [expanded, setExpanded] = useState(message.role === "assistant");
+  const displayContent = message.role === "thought"
+    ? normalizeThoughtContent(message.content)
+    : message.content;
 
   // Check for mermaid code blocks
   const mermaidMatch = message.content.match(/```mermaid\n([\s\S]*?)```/);
@@ -458,7 +462,7 @@ function CrafterMessageBubble({ message }: { message: CrafterMessage }) {
               expanded ? "max-h-40 overflow-y-auto" : "max-h-[2em] overflow-hidden"
             }`}
           >
-            {message.content}
+            {displayContent}
           </div>
         </button>
       </div>

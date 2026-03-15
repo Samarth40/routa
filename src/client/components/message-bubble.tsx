@@ -4,6 +4,7 @@ import {ChatMessage, PlanEntry} from "@/client/components/chat-panel/types";
 import {MarkdownViewer} from "@/client/components/markdown/markdown-viewer";
 import {TaskProgressBar, TaskInfo} from "@/client/components/task-progress-bar";
 import {summarizeToolOutput, ToolInputTable, ToolOutputView} from "@/client/components/tool-call-content";
+import {normalizeThoughtContent} from "@/client/components/chat-panel/thought-content";
 
 interface AskUserQuestionOption {
     label: string;
@@ -141,6 +142,7 @@ function AssistantBubble({content}: { content: string }) {
 
 function ThoughtBubble({content}: { content: string }) {
     const [expanded, setExpanded] = useState(false);
+    const displayContent = normalizeThoughtContent(content);
     return (
         <div className="w-full">
             <button type="button" onClick={() => setExpanded((e) => !e)} className="w-full text-left group">
@@ -160,7 +162,7 @@ function ThoughtBubble({content}: { content: string }) {
                         expanded ? "max-h-60 overflow-y-auto" : "max-h-[2.8em] overflow-hidden"
                     }`}
                 >
-                    {content}
+                    {displayContent}
                 </div>
             </button>
         </div>
