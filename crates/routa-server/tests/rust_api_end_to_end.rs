@@ -75,7 +75,7 @@ fn random_repo_path() -> PathBuf {
     std::env::temp_dir().join(format!("routa-server-repo-{}", uuid::Uuid::new_v4()))
 }
 
-fn write_repo_file(path: &PathBuf, file_name: &str, content: &str) {
+fn write_repo_file(path: &std::path::Path, file_name: &str, content: &str) {
     let file_path = path.join(file_name);
     if let Some(parent) = file_path.parent() {
         fs::create_dir_all(parent).unwrap();
@@ -441,11 +441,10 @@ async fn api_codebase_and_file_search_flow() {
         .json()
         .await
         .expect("decode default codebase response");
-    assert_eq!(
+    assert!(
         default_json["codebase"]["isDefault"]
             .as_bool()
-            .expect("isDefault"),
-        true
+            .expect("isDefault")
     );
 
     let search = fixture
@@ -569,10 +568,7 @@ async fn api_agent_flow_with_validation() {
         .json()
         .await
         .expect("decode status update response");
-    assert_eq!(
-        status_update_json["updated"].as_bool().unwrap_or(false),
-        true
-    );
+    assert!(status_update_json["updated"].as_bool().unwrap_or(false));
 
     let get_after_update = fixture
         .client
@@ -621,7 +617,7 @@ async fn api_agent_flow_with_validation() {
         .expect("delete agent");
     assert_eq!(delete_agent.status(), StatusCode::OK);
     let delete_json: Value = delete_agent.json().await.expect("decode delete response");
-    assert_eq!(delete_json["deleted"].as_bool().unwrap_or(false), true);
+    assert!(delete_json["deleted"].as_bool().unwrap_or(false));
 
     let after_delete = fixture
         .client
