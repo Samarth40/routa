@@ -41,12 +41,10 @@ def run_metric(metric: dict, dry_run: bool = False, verbose: bool = False) -> tu
 
     try:
         result = subprocess.run(
-            command,
+            ["/bin/bash", "-lc", command],
             capture_output=True,
             text=True,
             timeout=300,
-            shell=True,
-            executable="/bin/bash",
             cwd=PROJECT_ROOT,
         )
         output = result.stdout + result.stderr
