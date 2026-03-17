@@ -1,7 +1,7 @@
 ---
 title: "Design System: unify desktop sidebar, shell theme, and workspace routing"
 date: "2026-03-17"
-status: open
+status: resolved
 severity: high
 area: "ui"
 tags:
@@ -14,7 +14,7 @@ reported_by: "phodal"
 related_issues:
   - "https://github.com/phodal/routa/issues/183"
 github_issue: 183
-github_state: "open"
+github_state: "closed"
 github_url: "https://github.com/phodal/routa/issues/183"
 ---
 
@@ -43,6 +43,13 @@ github_url: "https://github.com/phodal/routa/issues/183"
   - 打开 `/workspace/default`、`/workspace/default/kanban`、`/traces`
   - 通过左侧或顶部导航切换页面
   - 访问 `/workspace/default/sessions` 与 `/sessions`
+
+## Resolution Notes
+
+- Desktop shell token 合约与关键路由回归已按 `docs/fitness/design-system-shell.md` 完成。
+- 本 issue 的后续治理需求（CSS 质量、组件/页面视觉回归、可访问性、性能）分离到独立 issue：
+  - `2026-03-17-design-system-quality-gates.md`
+  - GitHub issue: https://github.com/phodal/routa/issues/184
 
 ## Proposed Scope and Impact
 
