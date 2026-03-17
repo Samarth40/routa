@@ -22,8 +22,64 @@ interface CreateAgentFormState {
   modelTier: string;
 }
 
+interface GroupedBgRoute {
+  routeKey: string;
+  routeLabel: string;
+  agentId: string;
+  total: number;
+  pending: number;
+  running: number;
+  completed: number;
+  failed: number;
+  sourceCounts: Record<string, number>;
+  scheduleTriggerIds: string[];
+  latestTask: BackgroundTaskInfo | null;
+}
+
+interface GroupedWorkspaceAgent {
+  key: string;
+  name: string;
+  role: string;
+  status: string;
+  count: number;
+  ids: string[];
+}
+
 function normalizeAgentKey(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function normalizeAgentBaseName(value: string): string {
+  let normalized = normalizeAgentKey(value);
+  normalized = normalized.replace(
+    /-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    "",
+  );
+
+  const suffixPattern = /(?:[-_][0-9a-f]{6,})+$/i;
+  if (suffixPattern.test(normalized)) {
+    normalized = normalized.replace(suffixPattern, "");
+  }
+
+  return normalized.replace(/[-_]+$/g, "").trim().toLowerCase();
+}
+
+function getAgentGroupKey(name: string, role: string): string {
+  return `${normalizeAgentBaseName(name)}:${normalizeAgentKey(role)}`;
+}
+
+function getTaskRouteGroup(task: BackgroundTaskInfo): Pick<GroupedBgRoute, "routeKey" | "routeLabel" | "agentId" | "sourceCounts" | "scheduleTriggerIds"> {
+  const source = task.triggerSource?.trim().toLowerCase() || "manual";
+  const agentId = task.agentId.trim();
+  const triggeredBy = task.triggeredBy?.trim();
+
+  return {
+    routeKey: `agent:${agentId}`,
+    routeLabel: agentId,
+    agentId,
+    sourceCounts: { [source]: 1 },
+    scheduleTriggerIds: source === "schedule" && triggeredBy ? [triggeredBy] : [],
+  };
 }
 
 function statusClass(status: string): string {
@@ -45,6 +101,16 @@ function roleClass(role: string): string {
     GATE: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300",
   };
   return map[role.toUpperCase()] ?? map.DEVELOPER;
+}
+
+function aggregateAgentStatus(statuses: string[]): string {
+  const normalized = statuses.map((status) => status.toUpperCase());
+  if (normalized.includes("ACTIVE")) return "ACTIVE";
+  if (normalized.includes("ERROR")) return "ERROR";
+  if (normalized.includes("PENDING")) return "PENDING";
+  if (normalized.includes("CANCELLED")) return "CANCELLED";
+  if (normalized.includes("COMPLETED")) return "COMPLETED";
+  return "PENDING";
 }
 
 export function KanbanBgAgentPanel({ workspaceId }: KanbanBgAgentPanelProps) {
@@ -107,25 +173,27 @@ export function KanbanBgAgentPanel({ workspaceId }: KanbanBgAgentPanelProps) {
   }, [fetchPanelData]);
 
   const groupedRoutes = useMemo(() => {
-    const groups = new Map<string, {
-      agentId: string;
-      total: number;
-      pending: number;
-      running: number;
-      completed: number;
-      failed: number;
-      latestTask: BackgroundTaskInfo | null;
-    }>();
+    const groups = new Map<string, GroupedBgRoute>();
 
     for (const task of bgTasks) {
-      const key = task.agentId.trim();
-      const current = groups.get(key) ?? {
-        agentId: key,
+      const {
+        routeKey,
+        routeLabel,
+        agentId,
+        sourceCounts,
+        scheduleTriggerIds,
+      } = getTaskRouteGroup(task);
+      const current = groups.get(routeKey) ?? {
+        routeKey,
+        routeLabel,
+        agentId,
         total: 0,
         pending: 0,
         running: 0,
         completed: 0,
         failed: 0,
+        sourceCounts,
+        scheduleTriggerIds,
         latestTask: null,
       };
 
@@ -142,8 +210,16 @@ export function KanbanBgAgentPanel({ workspaceId }: KanbanBgAgentPanelProps) {
       if (!current.latestTask || candidateLatest > currentLatest) {
         current.latestTask = task;
       }
+      for (const [source, count] of Object.entries(sourceCounts)) {
+        current.sourceCounts[source] = (current.sourceCounts[source] ?? 0) + count;
+      }
+      for (const triggerId of scheduleTriggerIds) {
+        if (!current.scheduleTriggerIds.includes(triggerId)) {
+          current.scheduleTriggerIds.push(triggerId);
+        }
+      }
 
-      groups.set(key, current);
+      groups.set(routeKey, current);
     }
 
     return Array.from(groups.values()).sort((left, right) => right.total - left.total);
@@ -158,12 +234,37 @@ export function KanbanBgAgentPanel({ workspaceId }: KanbanBgAgentPanelProps) {
     return keys;
   }, [agents]);
 
+  const groupedAgents = useMemo(() => {
+    const grouped = new Map<string, GroupedWorkspaceAgent & { statusStack: string[] }>();
+
+    for (const agent of agents) {
+      const groupKey = getAgentGroupKey(agent.name, agent.role);
+      const displayName = normalizeAgentBaseName(agent.name);
+      const current = grouped.get(groupKey) ?? {
+        key: groupKey,
+        name: displayName,
+        role: agent.role,
+        status: agent.status,
+        count: 0,
+        ids: [],
+        statusStack: [],
+      };
+
+      current.count += 1;
+      current.ids.push(agent.id);
+      current.statusStack.push(agent.status);
+      current.status = aggregateAgentStatus(current.statusStack);
+      grouped.set(groupKey, current);
+    }
+
+    return Array.from(grouped.values());
+  }, [agents]);
+
   const agentCards = useMemo(() => {
-    return agents.map((agent) => {
-      const matchedRoutes = groupedRoutes.filter((route) => {
-        const normalizedRoute = normalizeAgentKey(route.agentId);
-        return normalizedRoute === normalizeAgentKey(agent.id) || normalizedRoute === normalizeAgentKey(agent.name);
-      });
+    return groupedAgents.map((agent) => {
+      const matchedRoutes = groupedRoutes.filter((route) =>
+        agent.ids.some((id) => normalizeAgentKey(route.agentId) === normalizeAgentKey(id)),
+      );
 
       const totals = matchedRoutes.reduce((acc, route) => {
         acc.total += route.total;
@@ -190,13 +291,13 @@ export function KanbanBgAgentPanel({ workspaceId }: KanbanBgAgentPanelProps) {
         ...totals,
       };
     });
-  }, [agents, groupedRoutes]);
+  }, [groupedRoutes, groupedAgents]);
 
   const unlinkedRoutes = useMemo(() => {
     return groupedRoutes.filter((route) => !linkedRouteKeys.has(normalizeAgentKey(route.agentId)));
   }, [groupedRoutes, linkedRouteKeys]);
 
-  const activeAgents = agents.filter((agent) => agent.status === "ACTIVE").length;
+  const activeAgents = groupedAgents.filter((agent) => agent.status === "ACTIVE").length;
   const runningRoutes = groupedRoutes.filter((route) => route.running > 0).length;
   const pendingTasks = bgTasks.filter((task) => task.status === "PENDING").length;
 
@@ -280,7 +381,7 @@ export function KanbanBgAgentPanel({ workspaceId }: KanbanBgAgentPanelProps) {
           <div data-testid="kanban-bg-agent-content" className="space-y-4">
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
               {[
-                { label: "Workspace Agents", value: agents.length, tone: "text-violet-600 dark:text-violet-300 bg-violet-50 dark:bg-violet-900/20" },
+                { label: "Workspace Agents", value: groupedAgents.length, tone: "text-violet-600 dark:text-violet-300 bg-violet-50 dark:bg-violet-900/20" },
                 { label: "Active Agents", value: activeAgents, tone: "text-emerald-600 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/20" },
                 { label: "Queue Routes", value: groupedRoutes.length, tone: "text-blue-600 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/20" },
                 { label: "Pending Tasks", value: pendingTasks, tone: "text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20" },
@@ -307,7 +408,75 @@ export function KanbanBgAgentPanel({ workspaceId }: KanbanBgAgentPanelProps) {
               </div>
             ) : (
               <div className="space-y-4">
-                <div className="grid gap-3 xl:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)]">
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-gray-200/70 bg-gray-50/80 px-4 py-3 dark:border-[#252838] dark:bg-[#0d1018]">
+                    <div className="flex items-center justify-between">
+                      <div className="text-[12px] font-semibold text-gray-700 dark:text-gray-300">Observed queue targets</div>
+                      <div className="text-[11px] text-gray-400 dark:text-gray-500">{groupedRoutes.length} routes</div>
+                    </div>
+                    <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                      These are the agent ids currently used by background tasks in this workspace.
+                    </p>
+
+                    <div className="mt-3 space-y-2">
+                      {groupedRoutes.length === 0 ? (
+                        <div className="rounded-xl border border-dashed border-gray-200 px-3 py-6 text-center text-[12px] text-gray-400 dark:border-[#2a3040] dark:text-gray-500">
+                          No queue activity yet.
+                        </div>
+                      ) : (
+                        groupedRoutes.map((route) => {
+                          const linked = !unlinkedRoutes.some((item) => item.agentId === route.agentId);
+                          return (
+                            <div
+                              key={route.routeKey}
+                              className="rounded-xl border border-gray-200/70 bg-white px-3 py-2 dark:border-[#2a3040] dark:bg-[#12141c]"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="truncate font-mono text-[11px] text-gray-700 dark:text-gray-200">
+                                    {route.routeLabel}
+                                  </div>
+                                  {route.scheduleTriggerIds.length > 0 && (
+                                    <div className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
+                                      Schedule triggers: {route.scheduleTriggerIds.length}
+                                    </div>
+                                  )}
+                                  <div className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
+                                    {route.latestTask ? `${route.latestTask.title} · ${formatRelativeTime(route.latestTask.createdAt)}` : "No recent task"}
+                                  </div>
+                                </div>
+                                <span
+                                  className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] ${
+                                    linked
+                                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300"
+                                      : "bg-gray-100 text-gray-600 dark:bg-[#20242f] dark:text-gray-300"
+                                  }`}
+                                >
+                                  {linked ? "linked" : "external"}
+                                </span>
+                              </div>
+                              <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+                                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-gray-600 dark:bg-[#20242f] dark:text-gray-300">
+                                  {route.total} total
+                                </span>
+                                {route.pending > 0 && (
+                                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+                                    {route.pending} pending
+                                  </span>
+                                )}
+                                {route.running > 0 && (
+                                  <span className="rounded-full bg-blue-100 px-2 py-0.5 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
+                                    {route.running} running
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="text-[12px] font-semibold text-gray-700 dark:text-gray-300">Workspace background agents</div>
@@ -316,9 +485,12 @@ export function KanbanBgAgentPanel({ workspaceId }: KanbanBgAgentPanelProps) {
                       </div>
                     </div>
                     <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
-                      {agentCards.map(({ agent, total, pending, running, completed, failed, latestTask }) => (
+                      {agentCards.map(({ agent, total, pending, running, completed, failed, latestTask }) => {
+                        const displayId = agent.ids[0] ?? "";
+                        const extra = Math.max(agent.count - 1, 0);
+                        return (
                         <article
-                          key={agent.id}
+                          key={agent.key}
                           data-testid="kanban-bg-agent-card"
                           className="rounded-2xl border border-gray-200/70 bg-gradient-to-br from-white via-white to-gray-50 px-4 py-3 dark:border-[#252838] dark:from-[#151822] dark:via-[#12141c] dark:to-[#0d1018]"
                         >
@@ -330,7 +502,10 @@ export function KanbanBgAgentPanel({ workspaceId }: KanbanBgAgentPanelProps) {
                                   {agent.role}
                                 </span>
                               </div>
-                              <div className="mt-1 truncate font-mono text-[10px] text-gray-400 dark:text-gray-500">{agent.id}</div>
+                              <div className="mt-1 truncate font-mono text-[10px] text-gray-400 dark:text-gray-500">
+                                {displayId}
+                                {extra > 0 && ` +${extra} more`}
+                              </div>
                             </div>
                             <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] ${statusClass(agent.status)}`}>
                               {agent.status}
@@ -366,68 +541,8 @@ export function KanbanBgAgentPanel({ workspaceId }: KanbanBgAgentPanelProps) {
                             )}
                           </div>
                         </article>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-gray-200/70 bg-gray-50/80 px-4 py-3 dark:border-[#252838] dark:bg-[#0d1018]">
-                    <div className="flex items-center justify-between">
-                      <div className="text-[12px] font-semibold text-gray-700 dark:text-gray-300">Observed queue targets</div>
-                      <div className="text-[11px] text-gray-400 dark:text-gray-500">{groupedRoutes.length} routes</div>
-                    </div>
-                    <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-                      These are the agent ids currently used by background tasks in this workspace.
-                    </p>
-
-                    <div className="mt-3 space-y-2">
-                      {groupedRoutes.length === 0 ? (
-                        <div className="rounded-xl border border-dashed border-gray-200 px-3 py-6 text-center text-[12px] text-gray-400 dark:border-[#2a3040] dark:text-gray-500">
-                          No queue activity yet.
-                        </div>
-                      ) : (
-                        groupedRoutes.map((route) => {
-                          const linked = !unlinkedRoutes.some((item) => item.agentId === route.agentId);
-                          return (
-                            <div
-                              key={route.agentId}
-                              className="rounded-xl border border-gray-200/70 bg-white px-3 py-2 dark:border-[#2a3040] dark:bg-[#12141c]"
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                  <div className="truncate font-mono text-[11px] text-gray-700 dark:text-gray-200">{route.agentId}</div>
-                                  <div className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
-                                    {route.latestTask ? `${route.latestTask.title} · ${formatRelativeTime(route.latestTask.createdAt)}` : "No recent task"}
-                                  </div>
-                                </div>
-                                <span
-                                  className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] ${
-                                    linked
-                                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300"
-                                      : "bg-gray-100 text-gray-600 dark:bg-[#20242f] dark:text-gray-300"
-                                  }`}
-                                >
-                                  {linked ? "linked" : "external"}
-                                </span>
-                              </div>
-                              <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
-                                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-gray-600 dark:bg-[#20242f] dark:text-gray-300">
-                                  {route.total} total
-                                </span>
-                                {route.pending > 0 && (
-                                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
-                                    {route.pending} pending
-                                  </span>
-                                )}
-                                {route.running > 0 && (
-                                  <span className="rounded-full bg-blue-100 px-2 py-0.5 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
-                                    {route.running} running
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
