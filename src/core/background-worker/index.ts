@@ -99,17 +99,13 @@ export class BackgroundTaskWorker {
 
     // Resolve workflow step dependencies before dispatch, injecting prior step outputs
     // into the prompt placeholders (e.g., ${steps.Analyze.output}).
-    const resolvedTask = await this.resolveTaskPrompt(task);
-    if (resolvedTask.prompt !== task.prompt) {
-      task = resolvedTask;
-      await system.backgroundTaskStore.save(task);
-    }
+    const prompt = await this.resolveTaskPrompt(task);
 
     // Optimistically mark RUNNING to prevent re-dispatch
     await system.backgroundTaskStore.updateStatus(task.id, "RUNNING", { startedAt: new Date() });
 
     try {
-      const sessionId = await this.createAndSendPrompt(task);
+      const sessionId = await this.createAndSendPrompt(task, prompt);
       await system.backgroundTaskStore.updateStatus(task.id, "RUNNING", {
         startedAt: task.startedAt ?? new Date(),
         resultSessionId: sessionId,
@@ -126,46 +122,68 @@ export class BackgroundTaskWorker {
     }
   }
 
-  private async resolveTaskPrompt(task: BackgroundTask): Promise<BackgroundTask> {
-    if (!task.workflowRunId || !task.dependsOnTaskIds || task.dependsOnTaskIds.length === 0) {
-      return task;
-    }
+  private async resolveTaskPrompt(task: BackgroundTask): Promise<string> {
+    if (!task.workflowRunId) return task.prompt;
 
     const system = getRoutaSystem();
-    const runTasks = await system.backgroundTaskStore.listByWorkflowRunId(task.workflowRunId);
+    const run = await system.workflowRunStore.get(task.workflowRunId);
+    if (!run) return task.prompt;
 
-    const stepOutputMap = new Map<string, string>();
-    for (const depId of task.dependsOnTaskIds) {
-      const depTask = runTasks.find((t) => t.id === depId);
-      if (!depTask?.workflowStepName || depTask.taskOutput === undefined) continue;
-      stepOutputMap.set(depTask.workflowStepName, depTask.taskOutput);
+    const stepOutputs = { ...(run.stepOutputs ?? {}) };
+    const dependentTasks = await system.backgroundTaskStore.listByWorkflowRunId(task.workflowRunId);
+    for (const depTask of dependentTasks) {
+      if (!depTask.workflowStepName || depTask.taskOutput === undefined) continue;
+      stepOutputs[depTask.workflowStepName] = depTask.taskOutput;
     }
 
-    if (stepOutputMap.size === 0) {
-      return task;
-    }
-
+    const unresolvedRefs: string[] = [];
     const resolvedPrompt = task.prompt.replace(
-      /\$\{steps\.([^.}]+)\.output\}/g,
-      (_match, stepName: string) => {
-        const key = stepName.trim();
-        return stepOutputMap.get(key) ?? _match;
-      }
+      /\$\{steps\.([^}]+)\.output\}/g,
+      (match, stepRef: string) => {
+        if (stepOutputs[stepRef] === undefined) {
+          unresolvedRefs.push(stepRef);
+          return match;
+        }
+        return stepOutputs[stepRef];
+      },
     );
 
-    if (resolvedPrompt === task.prompt) return task;
+    if (unresolvedRefs.length > 0) {
+      throw new Error(
+        `Task ${task.id} could not resolve dependencies for placeholders: ${unresolvedRefs.join(", ")}.`,
+      );
+    }
 
-    return {
-      ...task,
-      prompt: resolvedPrompt,
-    };
+    return resolvedPrompt;
+  }
+
+  private async persistCompletedTaskOutput(task: BackgroundTask): Promise<void> {
+    if (!task.workflowRunId || !task.workflowStepName || !task.taskOutput) {
+      return;
+    }
+
+    const trimmedOutput = task.taskOutput.trim();
+    if (!trimmedOutput) return;
+
+    const system = getRoutaSystem();
+    try {
+      const run = await system.workflowRunStore.get(task.workflowRunId);
+      const existingOutput = run?.stepOutputs?.[task.workflowStepName];
+      if (existingOutput !== undefined && existingOutput !== "") {
+        return;
+      }
+
+      await system.workflowRunStore.updateStepOutput(task.workflowRunId, task.workflowStepName, trimmedOutput);
+    } catch {
+      // best-effort
+    }
   }
 
   /**
    * Create an ACP session and fire the prompt via the internal `/api/acp` endpoint.
    * Returns the session ID.
    */
-  private async createAndSendPrompt(task: BackgroundTask): Promise<string> {
+  private async createAndSendPrompt(task: BackgroundTask, prompt?: string): Promise<string> {
     const base = getInternalBaseUrl();
 
     // Known ACP providers — everything else is treated as a specialist ID
@@ -223,7 +241,7 @@ export class BackgroundTaskWorker {
         jsonrpc: "2.0",
         id: 2,
         method: "session/prompt",
-        params: { sessionId, prompt: task.prompt, workspaceId: task.workspaceId },
+        params: { sessionId, prompt: prompt ?? task.prompt, workspaceId: task.workspaceId },
       }),
     }).catch((err) => {
       console.warn(`[BGWorker] session/prompt fire-and-forget error:`, err);
@@ -250,6 +268,10 @@ export class BackgroundTaskWorker {
     // Strategy 1: Check in-memory Map (for tasks dispatched in this process)
     for (const [sessionId, taskId] of [...this.sessionToTask.entries()]) {
       if (!activeSessions.has(sessionId)) {
+        const task = await system.backgroundTaskStore.get(taskId);
+        if (task) {
+          await this.persistCompletedTaskOutput(task);
+        }
         await system.backgroundTaskStore.updateStatus(taskId, "COMPLETED", {
           completedAt: new Date(),
           resultSessionId: sessionId,
@@ -273,6 +295,7 @@ export class BackgroundTaskWorker {
           && (Date.now() - new Date(task.startedAt).getTime()) > 2 * 60 * 1000;
 
         if (sessionGone || sessionIdleAndDone) {
+          await this.persistCompletedTaskOutput(task);
           await system.backgroundTaskStore.updateStatus(task.id, "COMPLETED", {
             completedAt: new Date(),
             resultSessionId: task.resultSessionId,

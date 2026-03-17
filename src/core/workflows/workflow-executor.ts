@@ -151,7 +151,11 @@ export class WorkflowExecutor {
     return task.id;
   }
 
-  private buildStepPrompt(step: WorkflowStep, definition: WorkflowDefinition, triggerPayload?: string): string {
+  private buildStepPrompt(
+    step: WorkflowStep,
+    definition: WorkflowDefinition,
+    triggerPayload?: string
+  ): string {
     let prompt = step.input ?? "";
     // Simple variable substitution
     prompt = prompt.replace(/\$\{trigger\.payload\}/g, triggerPayload ?? "");

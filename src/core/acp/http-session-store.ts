@@ -818,10 +818,13 @@ class HttpSessionStore {
       const task = await system.backgroundTaskStore.findBySessionId(sessionId);
       if (!task) return; // Not a background task session
 
+      let latestOutput = task.taskOutput ?? "";
+
       let toolCallCount = task.toolCallCount ?? 0;
       let inputTokens = task.inputTokens ?? 0;
       let outputTokens = task.outputTokens ?? 0;
       let currentActivity: string | undefined;
+      let didComplete = false;
 
       for (const update of updates) {
         if (update.message?.role === "assistant" && update.message.content) {
@@ -849,9 +852,18 @@ class HttpSessionStore {
           outputTokens += update.turnComplete.usage.outputTokens ?? 0;
         }
 
+        if (update.eventType === "agent_message" && update.message?.role === "assistant") {
+          const message = update.message.content;
+          if (typeof message === "string") {
+            latestOutput = update.message.isChunk
+              ? `${latestOutput}${message}`
+              : message;
+          }
+        }
+
         // Mark task COMPLETED when the agent's turn finishes
         if (update.eventType === "turn_complete" || update.turnComplete) {
-          const taskOutput = this.getSessionAssistantOutput(sessionId);
+          didComplete = true;
           try {
             await system.backgroundTaskStore.updateStatus(task.id, "COMPLETED", {
               completedAt: new Date(),
@@ -864,6 +876,23 @@ class HttpSessionStore {
             // best-effort
           }
         }
+      }
+
+      if (didComplete && task.workflowRunId && task.workflowStepName) {
+        try {
+          const run = await system.workflowRunStore.get(task.workflowRunId);
+          const existingOutput = run?.stepOutputs?.[task.workflowStepName];
+          const finalOutput = latestOutput.trim();
+          if (!existingOutput && finalOutput !== "") {
+            await system.workflowRunStore.updateStepOutput(task.workflowRunId, task.workflowStepName, finalOutput);
+          }
+        } catch {
+          // best-effort
+        }
+      }
+
+      if (latestOutput !== (task.taskOutput ?? "")) {
+        await system.backgroundTaskStore.updateTaskOutput(task.id, latestOutput);
       }
 
       // Update progress in the store
