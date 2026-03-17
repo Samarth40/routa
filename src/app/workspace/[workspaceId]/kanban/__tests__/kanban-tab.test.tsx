@@ -316,6 +316,7 @@ describe("KanbanTab card detail manual runs", () => {
               status: "completed",
               columnId: "dev",
               columnName: "Dev",
+              startedAt: "2025-01-01T00:00:00.000Z",
             },
             {
               sessionId: "session-456",
@@ -326,6 +327,7 @@ describe("KanbanTab card detail manual runs", () => {
               status: "completed",
               columnId: "review",
               columnName: "Review",
+              startedAt: "2025-01-01T00:05:00.000Z",
             },
           ],
         }]}
