@@ -1227,7 +1227,6 @@ export function KanbanTab({ workspaceId, boards, tasks, sessions, providers, spe
                             queuePosition={queuedPositions[task.id]}
                             onDragStart={() => setDragTaskId(task.id)}
                             onOpenDetail={() => openTaskDetail(task)}
-                            onOpenSession={openSession}
                             onDelete={() => confirmDeleteTask(task)}
                             onPatchTask={patchTask}
                             onRetryTrigger={retryTaskTrigger}

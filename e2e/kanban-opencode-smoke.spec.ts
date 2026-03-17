@@ -147,9 +147,6 @@ test.describe("Kanban OpenCode Smoke Test", () => {
     const triggeredCard = page.getByTestId("kanban-card").filter({ hasText: title }).first();
     await expect(triggeredCard).toBeVisible({ timeout: 20_000 });
 
-    // Step 14: Check if "View session" button appears (indicates session was created)
-    const viewSessionBtn = triggeredCard.getByRole("button", { name: "View session" });
-    
     // Also check for error banner (Docker not running, etc.)
     const errorBanner = page.locator(".bg-red-50, .dark\\:bg-red-900\\/20, .bg-red-100");
     const hasErrorBanner = await errorBanner.count() > 0;
@@ -158,51 +155,34 @@ test.describe("Kanban OpenCode Smoke Test", () => {
       const errorText = await errorBanner.first().textContent();
       results.push(`14. ERROR banner detected: "${errorText?.slice(0, 150)}"`);
     }
-    
-    if (await viewSessionBtn.isVisible({ timeout: 30_000 })) {
-      results.push("14. SUCCESS: View session button appeared (ACP triggered)");
+
+    const statusBadge = triggeredCard.locator("text=/Live|Starting|Failed|Idle/");
+    if (await statusBadge.first().isVisible({ timeout: 30_000 })) {
+      results.push("14. SUCCESS: Card status badge is visible after ACP trigger");
     } else if (hasErrorBanner) {
       results.push("    - ACP triggered but encountered error (expected in some environments)");
     } else {
-      results.push("14. View session button not found (may need more time or ACP not triggered)");
+      results.push("14. Card status badge not found (may need more time or ACP not triggered)");
     }
 
-    // Step 15: Click View session to open popup (if available)
-    const sessionPopupBtn = triggeredCard.getByRole("button", { name: "View session" });
-    if (await sessionPopupBtn.isVisible()) {
-      await sessionPopupBtn.click();
-      results.push("15. Clicked 'View session' button");
-      
-      // Wait for popup
-      await page.waitForTimeout(2000);
-      
-      // Check for session iframe or modal
-      const sessionIframe = page.locator("iframe[title='ACP session']");
-      if (await sessionIframe.isVisible({ timeout: 10_000 })) {
-        results.push("16. SUCCESS: Session popup iframe is visible");
-        
-        // Take screenshot
-        await page.screenshot({ 
-          path: "test-results/kanban-opencode-smoke-session-popup.png", 
-          fullPage: true 
-        });
-      } else {
-        results.push("16. Session iframe not visible in popup");
-      }
+    // Step 15: Open the card detail panel via the card itself
+    await triggeredCard.click();
+    results.push("15. Clicked the card to open details");
 
-      // Close the popup
-      const closeBtn = page.locator("button:has-text('Close')").first();
-      if (await closeBtn.isVisible()) {
-        await closeBtn.click();
-        results.push("17. Closed session popup");
-      }
+    const runHistoryHeading = page.getByText("Run History");
+    if (await runHistoryHeading.isVisible({ timeout: 10_000 })) {
+      results.push("16. SUCCESS: Run History is visible in card detail");
+
+      await page.screenshot({
+        path: "test-results/kanban-opencode-smoke-detail.png",
+        fullPage: true,
+      });
     } else {
-      results.push("15. Skipped session popup check - no View session button");
-      
-      // Take screenshot of current state
-      await page.screenshot({ 
-        path: "test-results/kanban-opencode-smoke-final.png", 
-        fullPage: true 
+      results.push("16. Run History not visible in card detail");
+
+      await page.screenshot({
+        path: "test-results/kanban-opencode-smoke-final.png",
+        fullPage: true,
       });
     }
 

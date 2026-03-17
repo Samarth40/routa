@@ -97,7 +97,7 @@ test.describe("Kanban workspace repository association", () => {
     await expect(card.getByTestId("repo-badge").first()).toContainText("routa-main");
     await page.screenshot({ path: "test-results/kanban-card-with-repo-badge.png" });
 
-    await card.getByRole("button", { name: "View detail" }).click();
+    await card.click();
     await page.getByRole("button", { name: "▼" }).click();
     await expect(page.getByTestId("detail-repo-toggle")).toHaveCount(2);
     await page.getByTestId("detail-repo-toggle").filter({ hasText: "secondary-context" }).click();
@@ -156,7 +156,7 @@ test.describe("Kanban workspace repository association", () => {
     await page.goto(`/workspace/${workspaceId}/kanban`, { waitUntil: "domcontentloaded" });
     const movedCard = page.getByTestId("kanban-card").filter({ hasText: title }).first();
     await expect(movedCard.getByTestId("worktree-badge")).toBeVisible({ timeout: 20_000 });
-    await movedCard.getByRole("button", { name: "View detail" }).click();
+    await movedCard.click();
     await page.getByRole("button", { name: "▼" }).click();
     const worktreeDetail = page.getByTestId("worktree-detail");
     await expect(worktreeDetail).toBeVisible();
@@ -173,7 +173,7 @@ test.describe("Kanban workspace repository association", () => {
 
     await page.goto(`/workspace/${workspaceId}/kanban`, { waitUntil: "domcontentloaded" });
     const doneCard = page.getByTestId("kanban-card").filter({ hasText: title }).first();
-    await doneCard.getByRole("button", { name: "View detail" }).click();
+    await doneCard.click();
     await page.getByRole("button", { name: "▼" }).click();
     await expect(page.getByTestId("worktree-detail")).toHaveCount(0);
     await page.screenshot({ path: "test-results/kanban-done-cleanup.png" });

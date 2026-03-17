@@ -22,7 +22,6 @@ export interface KanbanCardProps {
   queuePosition?: number;
   onDragStart: () => void;
   onOpenDetail: () => void;
-  onOpenSession: (sessionId: string | null) => void;
   onDelete: () => void;
   onPatchTask: (taskId: string, payload: Record<string, unknown>) => Promise<TaskInfo>;
   onRetryTrigger: (taskId: string) => Promise<void>;
@@ -30,6 +29,45 @@ export interface KanbanCardProps {
 }
 
 const ROLE_OPTIONS = ["CRAFTER", "ROUTA", "GATE", "DEVELOPER"];
+
+function getPriorityTone(priority?: string) {
+  switch ((priority ?? "medium").toLowerCase()) {
+    case "high":
+    case "urgent":
+      return "bg-rose-100 text-rose-700 ring-1 ring-inset ring-rose-200 dark:bg-rose-900/20 dark:text-rose-300 dark:ring-rose-900/40";
+    case "medium":
+      return "bg-amber-100 text-amber-800 ring-1 ring-inset ring-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:ring-amber-900/40";
+    case "low":
+      return "bg-emerald-100 text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:ring-emerald-900/40";
+    default:
+      return "bg-slate-200 text-slate-700 ring-1 ring-inset ring-slate-200 dark:bg-[#1c1f2e] dark:text-slate-300 dark:ring-white/5";
+  }
+}
+
+function getSessionTone(sessionStatus?: "connecting" | "ready" | "error", queuePosition?: number) {
+  if (queuePosition) {
+    return "bg-amber-100 text-amber-700 ring-1 ring-inset ring-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:ring-amber-900/40";
+  }
+
+  switch (sessionStatus) {
+    case "ready":
+      return "bg-emerald-100 text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:ring-emerald-900/40";
+    case "error":
+      return "bg-rose-100 text-rose-700 ring-1 ring-inset ring-rose-200 dark:bg-rose-900/20 dark:text-rose-300 dark:ring-rose-900/40";
+    case "connecting":
+      return "bg-sky-100 text-sky-700 ring-1 ring-inset ring-sky-200 dark:bg-sky-900/20 dark:text-sky-300 dark:ring-sky-900/40";
+    default:
+      return "bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-200 dark:bg-[#181c28] dark:text-slate-300 dark:ring-white/5";
+  }
+}
+
+function getStatusLabel(sessionStatus?: "connecting" | "ready" | "error", queuePosition?: number) {
+  if (queuePosition) return `Queued #${queuePosition}`;
+  if (sessionStatus === "connecting") return "Starting";
+  if (sessionStatus === "ready") return "Live";
+  if (sessionStatus === "error") return "Failed";
+  return "Idle";
+}
 
 export function KanbanCard({
   task,
@@ -42,7 +80,6 @@ export function KanbanCard({
   queuePosition,
   onDragStart,
   onOpenDetail,
-  onOpenSession,
   onDelete,
   onPatchTask,
   onRetryTrigger,
@@ -59,6 +96,29 @@ export function KanbanCard({
   const assignedProvider = availableProviders.find((provider) => provider.id === task.assignedProvider);
   const assignedRole = task.assignedRole ?? "DEVELOPER";
   const assignedSpecialist = specialists.find((item) => item.id === task.assignedSpecialistId);
+  const priorityTone = getPriorityTone(task.priority);
+  const sessionTone = getSessionTone(sessionStatus, queuePosition);
+  const statusLabel = getStatusLabel(sessionStatus, queuePosition);
+  const automationSourceLabel = assignedProvider ? "Card override" : "Lane default";
+  const automationSourceTone = assignedProvider
+    ? "bg-violet-100 text-violet-700 ring-1 ring-inset ring-violet-200 dark:bg-violet-900/20 dark:text-violet-300 dark:ring-violet-900/40"
+    : "bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-200 dark:bg-[#181c28] dark:text-slate-300 dark:ring-white/5";
+  const executionSummaryParts = assignedProvider
+    ? [assignedProvider.name, assignedRole, assignedSpecialist?.name].filter(Boolean)
+    : ["Inherited from lane defaults"];
+  const executionSummaryText = executionSummaryParts.join(" · ");
+  const syncSummary = sessionStatus === "connecting"
+    ? "Session starting..."
+    : queuePosition
+      ? `Queued #${queuePosition}`
+      : sessionStatus === "error"
+        ? (sessionError ?? "Session failed")
+        : task.lastSyncError
+          ? task.lastSyncError
+          : task.githubSyncedAt
+            ? `Synced ${new Date(task.githubSyncedAt).toLocaleString()}`
+            : "Not synced";
+  const objectiveText = task.objective?.trim() || "No objective captured yet.";
 
   const stopCardInteraction = (event: { stopPropagation: () => void }) => {
     event.stopPropagation();
@@ -101,11 +161,11 @@ export function KanbanCard({
       role="button"
       tabIndex={0}
       aria-label={`Open ${task.title}`}
-      className="group relative cursor-grab active:cursor-grabbing rounded-xl border border-gray-200/70 bg-gray-50/80 p-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-amber-400/50 dark:border-[#262938] dark:bg-[#0d1018]"
+      className="group relative flex cursor-grab flex-col gap-3 rounded-[1.35rem] border border-slate-200/80 bg-white/95 p-3.5 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.45)] transition duration-150 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-[0_24px_48px_-28px_rgba(15,23,42,0.55)] active:cursor-grabbing focus:outline-none focus:ring-2 focus:ring-amber-400/50 dark:border-[#262938] dark:bg-[#0d1018] dark:shadow-[0_18px_40px_-28px_rgba(0,0,0,0.8)] dark:hover:border-[#34384a]"
       data-testid="kanban-card"
     >
       <div
-        className="absolute left-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity rounded-md p-1 text-gray-400 dark:text-gray-500 pointer-events-none"
+        className="pointer-events-none absolute left-2.5 top-2.5 rounded-md p-1 text-slate-400 opacity-0 transition-opacity group-hover:opacity-100 dark:text-slate-500"
         title="Drag card"
         aria-label="Drag card"
       >
@@ -114,141 +174,137 @@ export function KanbanCard({
         </svg>
       </div>
 
-      {/* Delete button - shown on hover */}
       <button
-        onClick={(e) => {
-          e.stopPropagation();
+        onClick={(event) => {
+          event.stopPropagation();
           onDelete();
         }}
-        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity rounded-md p-1 hover:bg-red-100 dark:hover:bg-red-900/20"
+        className="absolute right-2.5 top-2.5 rounded-lg p-1 text-red-500 opacity-0 transition-all hover:bg-red-100 hover:text-red-600 group-hover:opacity-100 dark:text-red-400 dark:hover:bg-red-900/20"
         title="Delete task"
         data-testid="kanban-card-delete"
       >
-        <svg className="w-4 h-4 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
         </svg>
       </button>
 
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <div className="text-sm font-medium text-gray-800 dark:text-gray-100">{task.title}</div>
-          {task.githubNumber ? (
-            <a
-              href={task.githubUrl}
-              target="_blank"
-              rel="noreferrer"
-              onClick={stopCardInteraction}
-              className="mt-1 inline-flex text-[11px] text-amber-600 dark:text-amber-400 hover:underline"
-            >
-              #{task.githubNumber}
-            </a>
-          ) : (
-            <div className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">Local issue</div>
-          )}
+      <div className="flex items-start justify-between gap-3 pr-6">
+        <div className="min-w-0 flex-1">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            {task.githubNumber ? (
+              <a
+                href={task.githubUrl}
+                target="_blank"
+                rel="noreferrer"
+                onClick={stopCardInteraction}
+                className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-300 dark:ring-amber-900/40"
+              >
+                Issue #{task.githubNumber}
+              </a>
+            ) : (
+              <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600 ring-1 ring-inset ring-slate-200 dark:bg-[#181c28] dark:text-slate-300 dark:ring-white/5">
+                Local issue
+              </span>
+            )}
+            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] ${sessionTone}`}>
+              {statusLabel}
+            </span>
+          </div>
+          <div className="line-clamp-2 text-[15px] font-semibold leading-5 text-slate-900 dark:text-slate-100">
+            {task.title}
+          </div>
         </div>
-        <span className="rounded-full bg-gray-200 px-2 py-0.5 text-[10px] uppercase tracking-wide text-gray-600 dark:bg-[#1c1f2e] dark:text-gray-300">
+        <span className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] ${priorityTone}`}>
           {task.priority ?? "medium"}
         </span>
       </div>
 
-      <p className="mt-2 line-clamp-4 text-[12px] leading-5 text-gray-600 dark:text-gray-400">{task.objective}</p>
+      <p className="line-clamp-3 text-[12px] leading-5 text-slate-600 dark:text-slate-400">{objectiveText}</p>
 
       {task.labels && task.labels.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1">
+        <div className="flex flex-wrap gap-1.5">
           {task.labels.map((label) => (
-            <span key={label} className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+            <span key={label} className="rounded-full bg-amber-100/80 px-2 py-0.5 text-[10px] font-medium text-amber-800 ring-1 ring-inset ring-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:ring-amber-900/40">
               {label}
             </span>
           ))}
         </div>
       )}
 
-      {/* Repository badge */}
-      {((task.codebaseIds && task.codebaseIds.length > 0) || allCodebaseIds.length > 0) && (
-        <div className="mt-2 flex flex-wrap gap-1">
+      {(((task.codebaseIds && task.codebaseIds.length > 0) || allCodebaseIds.length > 0) || task.worktreeId) && (
+        <div className="flex flex-wrap gap-1.5">
           {(task.codebaseIds && task.codebaseIds.length > 0 ? task.codebaseIds : allCodebaseIds).map((cbId) => {
             const cb = codebases.find((c) => c.id === cbId);
             return cb ? (
               <span
                 key={cbId}
-                className="inline-flex items-center gap-1 rounded-full bg-violet-100 dark:bg-violet-900/20 px-2 py-0.5 text-[10px] text-violet-700 dark:text-violet-300"
+                className="inline-flex items-center gap-1 rounded-full bg-violet-100/90 px-2 py-0.5 text-[10px] font-medium text-violet-700 ring-1 ring-inset ring-violet-200 dark:bg-violet-900/20 dark:text-violet-300 dark:ring-violet-900/40"
                 data-testid="repo-badge"
               >
-                <span className="w-1.5 h-1.5 rounded-full bg-violet-500" />
+                <span className="h-1.5 w-1.5 rounded-full bg-violet-500" />
                 {cb.label ?? cb.repoPath.split("/").pop() ?? cb.repoPath}
               </span>
             ) : (
-              <span key={cbId} className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] text-red-600 dark:bg-red-900/20 dark:text-red-400" title="Repository no longer available">
+              <span key={cbId} className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-600 ring-1 ring-inset ring-red-200 dark:bg-red-900/20 dark:text-red-400 dark:ring-red-900/40" title="Repository no longer available">
                 ⚠ repo missing
               </span>
             );
           })}
+          <WorktreeBadge task={task} worktreeCache={worktreeCache} onOpenDetail={onOpenDetail} stopCardInteraction={stopCardInteraction} />
         </div>
       )}
 
-      {/* Worktree status badge */}
-      <WorktreeBadge task={task} worktreeCache={worktreeCache} onOpenDetail={onOpenDetail} stopCardInteraction={stopCardInteraction} />
-
-      {/* Quick ACP assignment stays visible; advanced overrides are tucked under More. */}
-      <div className="mt-3 border-t border-gray-200/50 pt-3 dark:border-[#262938]">
-        <div className="flex items-start justify-between gap-3 text-[11px]">
-          <div className="flex min-w-0 flex-col gap-1.5">
-            {assignedProvider ? (
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
-                  {assignedProvider.name}
-                </span>
-                {task.assignedProvider && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-gray-200 px-2 py-0.5 text-[10px] text-gray-600 dark:bg-[#1c1f2e] dark:text-gray-300">
-                    {assignedRole}
-                  </span>
-                )}
-                {assignedSpecialist && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] text-violet-700 dark:bg-violet-900/20 dark:text-violet-300">
-                    {assignedSpecialist.name}
-                  </span>
-                )}
+      <div className="rounded-2xl border border-slate-200/80 bg-slate-50/80 p-2.5 dark:border-[#262938] dark:bg-[#10131b]">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
+                Automation
               </div>
-            ) : (
-              <span className="text-gray-400 dark:text-gray-500">Unassigned</span>
-            )}
-          </div>
-          <div className="flex shrink-0 flex-col items-end gap-1.5">
-            <label className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-2 py-1 shadow-sm dark:border-gray-700 dark:bg-[#12141c]">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-gray-400 dark:text-gray-500">
-                ACP
+              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${automationSourceTone}`}>
+                {automationSourceLabel}
               </span>
-              <select
-                value={task.assignedProvider ?? ""}
-                disabled={availableProviders.length === 0}
-                onMouseDown={stopCardInteraction}
-                onClick={stopCardInteraction}
-                onChange={(event) => {
-                  void handleProviderChange(event.target.value);
-                }}
-                className="max-w-28 truncate bg-transparent text-[11px] font-medium text-gray-700 outline-none disabled:opacity-50 dark:text-gray-200"
-                aria-label={`ACP provider for ${task.title}`}
-                data-testid="kanban-card-acp-select"
-              >
-                <option value="">ACP</option>
-                {availableProviders.map((provider) => (
-                  <option key={provider.id} value={provider.id}>
-                    {provider.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                setShowAssignment((current) => !current);
-              }}
-              className="rounded-md border border-gray-200 px-2 py-0.5 text-[10px] text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-[#1b1e2b]"
-            >
-              {showAssignment ? "Less" : "More"}
-            </button>
+            </div>
+            <div className="mt-1.5 text-[12px] font-medium text-slate-700 dark:text-slate-200">
+              {executionSummaryText}
+            </div>
           </div>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              setShowAssignment((current) => !current);
+            }}
+            className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-medium text-slate-600 transition hover:bg-slate-100 dark:border-gray-700 dark:bg-[#151826] dark:text-slate-300 dark:hover:bg-[#1b1e2b]"
+          >
+            {showAssignment ? "Done" : "Edit"}
+          </button>
+        </div>
+        <div className="mt-2 flex items-center gap-2">
+          <label className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-2 shadow-sm dark:border-gray-700 dark:bg-[#12141c]">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
+              Provider
+            </span>
+            <select
+              value={task.assignedProvider ?? ""}
+              disabled={availableProviders.length === 0}
+              onMouseDown={stopCardInteraction}
+              onClick={stopCardInteraction}
+              onChange={(event) => {
+                void handleProviderChange(event.target.value);
+              }}
+              className="min-w-0 flex-1 truncate bg-transparent text-[11px] font-medium text-slate-700 outline-none disabled:opacity-50 dark:text-slate-200"
+              aria-label={`ACP provider for ${task.title}`}
+              data-testid="kanban-card-acp-select"
+            >
+              <option value="">Use lane default</option>
+              {availableProviders.map((provider) => (
+                <option key={provider.id} value={provider.id}>
+                  {provider.name}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
 
         {showAssignment && (
@@ -260,26 +316,29 @@ export function KanbanCard({
             onRefresh={onRefresh}
           />
         )}
-      </div>
 
-      {/* Footer with status and actions */}
-      <CardFooter
-        task={task}
-        sessionStatus={sessionStatus}
-        sessionError={sessionError}
-        canRun={canRun}
-        canRetry={canRetry}
-        queuePosition={queuePosition}
-        stopCardInteraction={stopCardInteraction}
-        onOpenDetail={onOpenDetail}
-        onOpenSession={onOpenSession}
-        onRetryTrigger={onRetryTrigger}
-      />
+        <div className="mt-2 flex items-center justify-between gap-2 border-t border-slate-200/80 pt-2 dark:border-[#262938]">
+          <div className="min-w-0 truncate text-[11px] text-slate-500 dark:text-slate-400">
+            {syncSummary}
+          </div>
+          {(canRun || canRetry) && (
+            <button
+              onClick={() => void onRetryTrigger(task.id)}
+              onClickCapture={stopCardInteraction}
+              className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-medium ${
+                canRetry
+                  ? "border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800/50 dark:bg-amber-900/10 dark:text-amber-300"
+                  : "border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800/50 dark:bg-emerald-900/10 dark:text-emerald-300"
+              }`}
+            >
+              {canRetry ? "Rerun" : "Run"}
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
-
-// Sub-components
 
 interface WorktreeBadgeProps {
   task: TaskInfo;
@@ -292,26 +351,32 @@ function WorktreeBadge({ task, worktreeCache, onOpenDetail, stopCardInteraction 
   if (!task.worktreeId) return null;
 
   const wt = worktreeCache[task.worktreeId];
-  if (!wt) return <div className="mt-2 text-[10px] text-gray-400">Loading worktree...</div>;
+  if (!wt) {
+    return (
+      <div className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500 ring-1 ring-inset ring-slate-200 dark:bg-[#181c28] dark:text-slate-400 dark:ring-white/5">
+        Loading worktree...
+      </div>
+    );
+  }
 
   const wtBadgeColor = wt.status === "active"
-    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300"
+    ? "bg-emerald-100 text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:ring-emerald-900/40"
     : wt.status === "creating"
-      ? "bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
-      : "bg-rose-100 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300";
+      ? "bg-amber-100 text-amber-700 ring-1 ring-inset ring-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:ring-amber-900/40"
+      : "bg-rose-100 text-rose-700 ring-1 ring-inset ring-rose-200 dark:bg-rose-900/20 dark:text-rose-300 dark:ring-rose-900/40";
 
   return (
     <button
       onClick={onOpenDetail}
       onClickCapture={stopCardInteraction}
-      className="mt-2 flex items-center gap-1.5 group"
+      className="inline-flex items-center gap-1.5 rounded-full bg-white px-2 py-0.5 ring-1 ring-inset ring-slate-200 transition hover:bg-slate-50 dark:bg-[#151826] dark:ring-white/5 dark:hover:bg-[#1b1e2b]"
       title="Click to view worktree details"
       data-testid="worktree-badge"
     >
       <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${wtBadgeColor}`}>
         {wt.status}
       </span>
-      <span className="max-w-30 truncate text-[10px] text-gray-500 dark:text-gray-400">{wt.branch}</span>
+      <span className="max-w-30 truncate text-[10px] text-slate-500 dark:text-slate-400">{wt.branch}</span>
     </button>
   );
 }
@@ -332,17 +397,16 @@ function AssignmentSection({
   onRefresh,
 }: AssignmentSectionProps) {
   return (
-    <div className="mt-2 space-y-2">
+    <div className="mt-2 space-y-2 border-t border-slate-200/80 pt-2 dark:border-[#262938]">
       {!task.assignedProvider && (
-        <div className="rounded-lg border border-dashed border-gray-200 bg-gray-100/70 px-3 py-2 text-[11px] text-gray-500 dark:border-gray-700 dark:bg-[#10131a] dark:text-gray-400">
-          Pick an ACP provider above to override the lane default for this card.
+        <div className="rounded-xl border border-dashed border-slate-200 bg-white/80 px-3 py-2 text-[11px] text-slate-500 dark:border-gray-700 dark:bg-[#10131a] dark:text-gray-400">
+          Select a provider above only if this card needs to override the lane default.
         </div>
       )}
 
-      {/* Role (only show if provider is assigned) */}
       {task.assignedProvider && (
         <div className="flex items-center gap-2">
-          <span className="w-16 shrink-0 text-[10px] font-medium text-gray-500 dark:text-gray-400">Role</span>
+          <span className="w-16 shrink-0 text-[10px] font-medium text-slate-500 dark:text-gray-400">Role</span>
           <select
             value={task.assignedRole ?? "DEVELOPER"}
             onClick={stopCardInteraction}
@@ -350,7 +414,7 @@ function AssignmentSection({
               await onPatchTask(task.id, { assignedRole: event.target.value });
               onRefresh();
             }}
-            className="flex-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] dark:border-gray-700 dark:bg-[#12141c]"
+            className="flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] text-slate-700 dark:border-gray-700 dark:bg-[#12141c] dark:text-slate-200"
           >
             {ROLE_OPTIONS.map((role) => (
               <option key={role} value={role}>{role}</option>
@@ -359,10 +423,9 @@ function AssignmentSection({
         </div>
       )}
 
-      {/* Specialist (only show if provider is assigned) */}
       {task.assignedProvider && (
         <div className="flex items-center gap-2">
-          <span className="w-16 shrink-0 text-[10px] font-medium text-gray-500 dark:text-gray-400">Specialist</span>
+          <span className="w-16 shrink-0 text-[10px] font-medium text-slate-500 dark:text-gray-400">Specialist</span>
           <select
             value={task.assignedSpecialistId ?? ""}
             onClick={stopCardInteraction}
@@ -375,7 +438,7 @@ function AssignmentSection({
               });
               onRefresh();
             }}
-            className="min-w-0 flex-1 truncate rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] dark:border-gray-700 dark:bg-[#12141c]"
+            className="min-w-0 flex-1 truncate rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] text-slate-700 dark:border-gray-700 dark:bg-[#12141c] dark:text-slate-200"
           >
             <option value="">None</option>
             {specialists.map((specialist) => (
@@ -386,112 +449,6 @@ function AssignmentSection({
           </select>
         </div>
       )}
-    </div>
-  );
-}
-
-
-interface CardFooterProps {
-  task: TaskInfo;
-  sessionStatus?: "connecting" | "ready" | "error";
-  sessionError?: string;
-  canRun: boolean;
-  canRetry: boolean;
-  queuePosition?: number;
-  stopCardInteraction: (event: { stopPropagation: () => void }) => void;
-  onOpenDetail: () => void;
-  onOpenSession: (sessionId: string | null) => void;
-  onRetryTrigger: (taskId: string) => Promise<void>;
-}
-
-function CardFooter({
-  task,
-  sessionStatus,
-  sessionError,
-  canRun,
-  canRetry,
-  queuePosition,
-  stopCardInteraction,
-  onOpenDetail,
-  onOpenSession,
-  onRetryTrigger,
-}: CardFooterProps) {
-  return (
-    <div className="mt-3 flex items-center justify-between gap-2 text-[11px]">
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-gray-400 dark:text-gray-500">
-          {sessionStatus === "connecting"
-            ? "Session starting..."
-            : queuePosition
-              ? `Queued #${queuePosition}`
-            : sessionStatus === "error"
-              ? (sessionError ?? "Session failed")
-              : task.lastSyncError
-                ? task.lastSyncError
-                : task.githubSyncedAt
-                  ? `Synced ${new Date(task.githubSyncedAt).toLocaleString()}`
-                  : "Not synced"}
-        </div>
-        {sessionStatus && (
-          <div className="mt-1 flex items-center gap-1.5">
-            <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-              sessionStatus === "ready"
-                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300"
-                : sessionStatus === "error"
-                  ? "bg-rose-100 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300"
-                  : "bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
-            }`}>
-              {sessionStatus}
-            </span>
-          </div>
-        )}
-        {!sessionStatus && queuePosition ? (
-          <div className="mt-1 flex items-center gap-1.5">
-            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
-              queued
-            </span>
-          </div>
-        ) : null}
-      </div>
-      <div className="flex items-center gap-2">
-        {canRun && !canRetry && (
-          <button
-            onClick={() => void onRetryTrigger(task.id)}
-            onClickCapture={stopCardInteraction}
-            className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800/50 dark:bg-emerald-900/10 dark:text-emerald-300"
-          >
-            Run
-          </button>
-        )}
-        {canRetry && (
-          <button
-            onClick={() => void onRetryTrigger(task.id)}
-            onClickCapture={stopCardInteraction}
-            className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-amber-700 hover:bg-amber-100 dark:border-amber-800/50 dark:bg-amber-900/10 dark:text-amber-300"
-          >
-            Rerun
-          </button>
-        )}
-        <button
-          onMouseDown={stopCardInteraction}
-          onClick={(event) => {
-            event.stopPropagation();
-            onOpenDetail();
-          }}
-          className="rounded-md bg-blue-100 px-2 py-1 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/20 dark:text-blue-300"
-        >
-          View detail
-        </button>
-        {task.triggerSessionId && (
-          <button
-            onClick={() => onOpenSession(task.triggerSessionId ?? null)}
-            onClickCapture={stopCardInteraction}
-            className="rounded-md bg-violet-100 px-2 py-1 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/20 dark:text-violet-300"
-          >
-            View session
-          </button>
-        )}
-      </div>
     </div>
   );
 }
