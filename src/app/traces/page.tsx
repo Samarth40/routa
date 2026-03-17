@@ -226,7 +226,7 @@ function TracePageContent() {
         </Link>
       )}
     >
-      <div className="h-full flex flex-col bg-[#252526] overflow-hidden">
+      <div className="h-full flex flex-col bg-[#252526] overflow-hidden dark">
         {/* Header */}
         <div className="shrink-0 px-4 py-3 border-b border-[#3c3c3c] flex items-center justify-between">
           <div className="flex items-center gap-2 min-w-0">
@@ -474,7 +474,7 @@ function TracePageContent() {
 export default function TracePage() {
   return (
     <Suspense fallback={
-      <div className="h-screen flex items-center justify-center bg-[#252526]">
+      <div className="h-screen flex items-center justify-center bg-[#252526] dark">
         <div className="text-center">
           <div className="animate-spin w-8 h-8 border-2 border-[#0e639c] border-t-transparent rounded-full mx-auto mb-4" />
           <p className="text-sm text-[#858585]">Loading...</p>
