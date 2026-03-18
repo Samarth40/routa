@@ -16,6 +16,13 @@ import { buildRemainingLaneStepsMessage, resolveCurrentLaneAutomationState } fro
 export const dynamic = "force-dynamic";
 
 async function buildArtifactSummary(task: Task, system: ReturnType<typeof getRoutaSystem>) {
+  if (!system.artifactStore) {
+    return {
+      total: 0,
+      byType: {} as Partial<Record<ArtifactType, number>>,
+    };
+  }
+
   const artifacts = await system.artifactStore.listByTask(task.id);
   const byType: Partial<Record<ArtifactType, number>> = {};
 
