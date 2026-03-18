@@ -62,11 +62,11 @@ function getRecoveryReason(event: AgentEvent, completionSatisfied: boolean): Tas
   if (event.type === AgentEventType.AGENT_TIMEOUT) {
     return "watchdog_inactivity";
   }
-  if (
-    event.type === AgentEventType.AGENT_FAILED
-    || (event.type === AgentEventType.AGENT_COMPLETED && !completionSatisfied)
-  ) {
-    return completionSatisfied ? "agent_failed" : "completion_criteria_not_met";
+  if (event.type === AgentEventType.AGENT_FAILED) {
+    return "agent_failed";
+  }
+  if (event.type === AgentEventType.AGENT_COMPLETED && !completionSatisfied) {
+    return "completion_criteria_not_met";
   }
   return "agent_failed";
 }
@@ -636,8 +636,15 @@ export class KanbanWorkflowOrchestrator {
     const sessionRecord = sessionStore.getSession(params.sessionId);
     if (!sessionRecord) {
       console.warn(
-        `[WorkflowOrchestrator] ACP session ${params.sessionId} not found in local session store; attempting recovery prompt anyway.`,
+        `[WorkflowOrchestrator] ACP session ${params.sessionId} not found in local session store; skipping recovery prompt.`,
       );
+      return;
+    }
+    if (sessionRecord.acpStatus === "error") {
+      console.warn(
+        `[WorkflowOrchestrator] ACP session ${params.sessionId} is already in error state; skipping recovery prompt.`,
+      );
+      return;
     }
 
     try {

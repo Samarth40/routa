@@ -1,7 +1,7 @@
 ---
 title: "Dev lane ACP sessions can silently go idle or fail without watchdog detection or automatic recovery"
 date: "2026-03-17"
-status: open
+status: resolved
 severity: high
 area: "acp"
 tags: ["acp", "kanban", "dev-lane", "watchdog", "session", "recovery", "agent", "ralph-loop"]
@@ -11,6 +11,7 @@ related_issues:
   - "docs/issues/2026-03-14-gh-148-feat-add-session-queueing-and-concurrency-limits-for-kanban-acp-automati.md"
   - "docs/issues/2026-03-14-kanban-story-lane-automation-stalls-after-first-session.md"
   - "https://github.com/phodal/routa/issues/185"
+github_issue: "https://github.com/phodal/routa/issues/190"
 ---
 
 # Dev lane ACP sessions can silently go idle or fail without watchdog detection or automatic recovery
@@ -216,3 +217,42 @@ This gives Routa multiple viable paths:
 - GitHub issue: `phodal/routa#185`
 - Related GitHub issue: `#137` lifecycle notifications and coordinator awareness
 - Related GitHub issue: `#148` session queueing and concurrency limits
+
+## Implementation Update (2026-03-18)
+
+- Added/confirmed supervision modes and retry config in shared board metadata:
+  - `mode`: `disabled | watchdog_retry | ralph_loop`
+  - `inactivityTimeoutMinutes`
+  - `maxRecoveryAttempts`
+  - `completionRequirement` (used by Ralph Loop)
+- Implemented bounded recovery trigger flow in workflow orchestrator:
+  - `scanForInactiveSessions()` scans running dev automations for timeout/error,
+  emits `AGENT_TIMEOUT`/`AGENT_FAILED`, and marks session terminal state.
+  - `handleAgentCompletion()` branches to:
+    - direct fail/complete behavior for non-loop modes,
+    - bounded retry behavior for `watchdog_retry` and `ralph_loop`.
+  - `recoverAutomation()` creates a fresh ACP session and preserves attempt metadata in task history.
+- Added a targeted watchdog message prompt:
+  - `hi，这里有一个 Agent（acp session id = ...）很久没动了，你看看怎么回事，要不要继续？`
+  - sent via `send_prompt` before bounded recovery in modes that can retry.
+- Added behavior for missing/stale session metadata:
+  - if source session record is missing or already in error, skip user prompt and continue recovery path.
+- Extended watchdog retry/rerun signaling path:
+  - `workflow-orchestrator-singleton` now tries to deliver recovery prompts to the active ACP session's Routa agent via `read_agent_conversation` + `send_message_to_agent` first.
+  - the same payload is reused as fallback through `session/prompt` when agent messaging is unavailable or fails.
+- Added/updated tests:
+  - `src/core/kanban/__tests__/workflow-orchestrator.test.ts`
+  - `src/core/kanban/__tests__/board-session-supervision.test.ts`
+
+## Validation Update (2026-03-18)
+
+- Re-ran targeted orchestrator coverage:
+  - `npm run test -- src/core/kanban/__tests__/workflow-orchestrator.test.ts src/core/kanban/__tests__/workflow-orchestrator-singleton.test.ts`
+  - result: 9/9 tests passed
+- Re-ran lint for the touched orchestration files and tests:
+  - `npm run lint -- src/core/kanban/workflow-orchestrator.ts src/core/kanban/workflow-orchestrator-singleton.ts src/core/kanban/__tests__/workflow-orchestrator.test.ts src/core/kanban/__tests__/workflow-orchestrator-singleton.test.ts`
+  - result: passed
+- Verified the live dev board still exposes prior watchdog recovery evidence in the UI:
+  - `/workspace/default/kanban` currently shows watchdog-related cards whose latest state includes
+    `Dev automation recovered after session inactive too long. Attempt 2/2.`
+- Based on current code, tests, and live board state, this issue is not reproducible as an unhandled silent-stall path anymore.

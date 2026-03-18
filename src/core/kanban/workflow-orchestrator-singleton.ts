@@ -26,6 +26,7 @@ import { KanbanSessionQueue } from "./kanban-session-queue";
 import { getKanbanSessionConcurrencyLimit as getBoardSessionConcurrencyLimit } from "./board-session-limits";
 import { getKanbanDevSessionSupervision } from "./board-session-supervision";
 import { upsertTaskLaneSession } from "./task-lane-history";
+import { getHttpSessionStore } from "../acp/http-session-store";
 
 // Use globalThis to survive HMR in Next.js dev mode
 const GLOBAL_KEY = "__routa_workflow_orchestrator__";
@@ -243,11 +244,50 @@ async function resolveDevSessionSupervision(
   return getKanbanDevSessionSupervision(workspace?.metadata, boardId);
 }
 
-async function sendPromptToKanbanSession(params: {
-  workspaceId: string;
-  sessionId: string;
-  prompt: string;
-}): Promise<void> {
+async function sendPromptToKanbanSession(
+  system: RoutaSystem,
+  params: {
+    workspaceId: string;
+    sessionId: string;
+    prompt: string;
+  },
+): Promise<void> {
+  const sessionStore = getHttpSessionStore();
+  const sessionRecord = sessionStore.getSession(params.sessionId);
+  const targetAgentId = sessionRecord?.routaAgentId;
+
+  if (targetAgentId) {
+    const conversationResult = await system.tools.readAgentConversation({
+      agentId: targetAgentId,
+      lastN: 5,
+    });
+
+    if (conversationResult.success) {
+      const messageCount = (conversationResult.data as { messages?: unknown[] } | undefined)?.messages?.length ?? 0;
+      console.debug(
+        `[WorkflowOrchestrator] Read ${messageCount} recent messages for agent ${targetAgentId} before recovery prompt.`,
+      );
+    } else {
+      console.warn(
+        `[WorkflowOrchestrator] Failed to read conversation for agent ${targetAgentId}: ${conversationResult.error}`,
+      );
+    }
+
+    const toolResult = await system.tools.messageAgent({
+      fromAgentId: targetAgentId,
+      toAgentId: targetAgentId,
+      message: params.prompt,
+    });
+
+    if (toolResult.success) {
+      return;
+    }
+
+    console.warn(
+      `[WorkflowOrchestrator] Failed to send recovery prompt via agent ${targetAgentId}: ${toolResult.error}. Falling back to session/prompt.`,
+    );
+  }
+
   const response = await fetch(`${getInternalApiOrigin()}/api/acp`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -336,7 +376,7 @@ export function startWorkflowOrchestrator(system: RoutaSystem): void {
   orchestrator.setResolveDevSessionSupervision(({ workspaceId, boardId, stage }) =>
     resolveDevSessionSupervision(system, workspaceId, boardId, stage)
   );
-  orchestrator.setSendKanbanSessionPrompt((params) => sendPromptToKanbanSession({
+  orchestrator.setSendKanbanSessionPrompt((params) => sendPromptToKanbanSession(system, {
     workspaceId: params.workspaceId,
     sessionId: params.sessionId,
     prompt: params.prompt,

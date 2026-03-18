@@ -6,6 +6,7 @@ import { createKanbanBoard } from "../../models/kanban";
 import { createTask } from "../../models/task";
 import { InMemoryKanbanBoardStore } from "../../store/kanban-board-store";
 import { InMemoryTaskStore } from "../../store/task-store";
+import { upsertTaskLaneSession } from "../task-lane-history";
 import { KanbanWorkflowOrchestrator } from "../workflow-orchestrator";
 
 describe("KanbanWorkflowOrchestrator", () => {
@@ -443,6 +444,252 @@ describe("KanbanWorkflowOrchestrator", () => {
     orchestrator.stop();
   });
 
+  it("records AGENT_FAILED recovery with agent_failed reason", async () => {
+    const eventBus = new EventBus();
+    const boardStore = new InMemoryKanbanBoardStore();
+    const taskStore = new InMemoryTaskStore();
+    const sendKanbanSessionPrompt = vi.fn().mockResolvedValue(undefined);
+    const createSession = vi
+      .fn()
+      .mockImplementation(async ({ cardId, supervision }) => {
+        const trackedTask = await taskStore.get(cardId);
+        const sessionId = supervision?.attempt === 1
+          ? "session-failed-1"
+          : "session-failed-2";
+        if (trackedTask) {
+          upsertTaskLaneSession(trackedTask, {
+            sessionId,
+            columnId: "dev",
+            columnName: "Dev",
+            attempt: supervision?.attempt,
+            loopMode: supervision?.mode,
+            completionRequirement: supervision?.completionRequirement,
+            objective: trackedTask.objective,
+            status: "running",
+            recoveredFromSessionId: supervision?.recoveredFromSessionId,
+            recoveryReason: supervision?.recoveryReason,
+          });
+          await taskStore.save(trackedTask);
+        }
+        getHttpSessionStore().upsertSession({
+          sessionId,
+          workspaceId: "default",
+          provider: "claude",
+          cwd: "/tmp",
+          createdAt: new Date().toISOString(),
+        });
+        return sessionId;
+      });
+
+    const board = createKanbanBoard({
+      id: "board-dev-watchdog-failed-reason",
+      workspaceId: "default",
+      name: "Main Board",
+      isDefault: true,
+      columns: [
+        { id: "todo", name: "Todo", stage: "todo", position: 0 },
+        {
+          id: "dev",
+          name: "Dev",
+          stage: "dev",
+          position: 1,
+          automation: {
+            enabled: true,
+            providerId: "claude",
+            role: "DEVELOPER",
+            transitionType: "entry",
+          },
+        },
+      ],
+    });
+    await boardStore.save(board);
+
+    const task = createTask({
+      id: "task-watchdog-failed-reason",
+      title: "Keep AGENT_FAILED reason as agent_failed",
+      objective: "Verify recovery reason classification on failed sessions",
+      workspaceId: "default",
+      boardId: board.id,
+      columnId: "dev",
+    });
+    await taskStore.save(task);
+
+    const orchestrator = new KanbanWorkflowOrchestrator(
+      eventBus,
+      boardStore,
+      taskStore,
+      createSession,
+    );
+    orchestrator.setSendKanbanSessionPrompt((params) => sendKanbanSessionPrompt(params));
+    orchestrator.setResolveDevSessionSupervision(async () => ({
+      mode: "watchdog_retry",
+      inactivityTimeoutMinutes: 1,
+      maxRecoveryAttempts: 1,
+      completionRequirement: "turn_complete",
+    }));
+    orchestrator.start();
+
+    eventBus.emit({
+      type: AgentEventType.COLUMN_TRANSITION,
+      agentId: "test",
+      workspaceId: "default",
+      data: {
+        cardId: task.id,
+        cardTitle: task.title,
+        boardId: board.id,
+        workspaceId: "default",
+        fromColumnId: "todo",
+        toColumnId: "dev",
+      },
+      timestamp: new Date(),
+    });
+
+    await vi.waitFor(() => {
+      expect(createSession).toHaveBeenCalledTimes(1);
+      expect(orchestrator.getAutomationForCard(task.id)).toMatchObject({
+        sessionId: "session-failed-1",
+        attempt: 1,
+      });
+    });
+
+    eventBus.emit({
+      type: AgentEventType.AGENT_FAILED,
+      agentId: "session-failed-1",
+      workspaceId: "default",
+      data: {
+        sessionId: "session-failed-1",
+        success: false,
+        error: "boom",
+      },
+      timestamp: new Date(),
+    });
+
+    await vi.waitFor(async () => {
+      expect(createSession).toHaveBeenCalledTimes(2);
+      const updatedTask = await taskStore.get(task.id);
+      expect(updatedTask?.laneSessions).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          sessionId: "session-failed-1",
+          status: "failed",
+          recoveryReason: "agent_failed",
+        }),
+      ]));
+      expect(sendKanbanSessionPrompt).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: "session-failed-1",
+        }),
+      );
+    });
+
+    orchestrator.stop();
+  });
+
+  it("recovers an inactive dev session even when the stale session is missing from local store", async () => {
+    const eventBus = new EventBus();
+    const boardStore = new InMemoryKanbanBoardStore();
+    const taskStore = new InMemoryTaskStore();
+    const sendKanbanSessionPrompt = vi.fn().mockResolvedValue(undefined);
+    const createSession = vi
+      .fn()
+      .mockResolvedValueOnce("missing-session-1")
+      .mockResolvedValueOnce("missing-session-2");
+
+    const board = createKanbanBoard({
+      id: "board-dev-watchdog-missing",
+      workspaceId: "default",
+      name: "Main Board",
+      isDefault: true,
+      columns: [
+        { id: "todo", name: "Todo", stage: "todo", position: 0 },
+        {
+          id: "dev",
+          name: "Dev",
+          stage: "dev",
+          position: 1,
+          automation: {
+            enabled: true,
+            providerId: "claude",
+            role: "DEVELOPER",
+            transitionType: "entry",
+          },
+        },
+      ],
+    });
+    await boardStore.save(board);
+
+    const task = createTask({
+      id: "task-watchdog-missing",
+      title: "Recover stalled dev session without session record",
+      objective: "Implement recovery if session record is missing",
+      workspaceId: "default",
+      boardId: board.id,
+      columnId: "dev",
+    });
+    await taskStore.save(task);
+
+    const orchestrator = new KanbanWorkflowOrchestrator(
+      eventBus,
+      boardStore,
+      taskStore,
+      createSession,
+    );
+    orchestrator.setSendKanbanSessionPrompt((params) => sendKanbanSessionPrompt(params));
+    orchestrator.setResolveDevSessionSupervision(async () => ({
+      mode: "watchdog_retry",
+      inactivityTimeoutMinutes: 1,
+      maxRecoveryAttempts: 1,
+      completionRequirement: "turn_complete",
+    }));
+    orchestrator.start();
+
+    eventBus.emit({
+      type: AgentEventType.COLUMN_TRANSITION,
+      agentId: "test",
+      workspaceId: "default",
+      data: {
+        cardId: task.id,
+        cardTitle: task.title,
+        boardId: board.id,
+        workspaceId: "default",
+        fromColumnId: "todo",
+        toColumnId: "dev",
+      },
+      timestamp: new Date(),
+    });
+
+    await vi.waitFor(() => {
+      expect(createSession).toHaveBeenCalledTimes(1);
+      expect(orchestrator.getAutomationForCard(task.id)).toMatchObject({
+        sessionId: "missing-session-1",
+        attempt: 1,
+        recoveryAttempts: 0,
+      });
+    });
+    const automation = orchestrator.getAutomationForCard(task.id);
+    if (automation) {
+      automation.startedAt = new Date(Date.now() - 61_000);
+    }
+
+    const watchdog = orchestrator as unknown as {
+      scanForInactiveSessions: () => Promise<void>;
+    };
+    await watchdog.scanForInactiveSessions();
+
+    await vi.waitFor(async () => {
+      expect(createSession).toHaveBeenCalledTimes(2);
+      expect(orchestrator.getAutomationForCard(task.id)).toMatchObject({
+        sessionId: "missing-session-2",
+        attempt: 2,
+        recoveryAttempts: 1,
+      });
+      expect(sendKanbanSessionPrompt).not.toHaveBeenCalled();
+      const updatedTask = await taskStore.get(task.id);
+      expect(updatedTask?.lastSyncError).toContain("Attempt 2/2");
+    });
+
+    orchestrator.stop();
+  });
+
   it("recreates a dev session in Ralph Loop mode until completion criteria are met", async () => {
     const eventBus = new EventBus();
     const boardStore = new InMemoryKanbanBoardStore();
@@ -500,6 +747,15 @@ describe("KanbanWorkflowOrchestrator", () => {
       completionRequirement: "completion_summary",
     }));
     orchestrator.start();
+
+    const sessionStore = getHttpSessionStore();
+    sessionStore.upsertSession({
+      sessionId: "session-loop-1",
+      workspaceId: "default",
+      provider: "claude",
+      cwd: "/tmp",
+      createdAt: new Date().toISOString(),
+    });
 
     eventBus.emit({
       type: AgentEventType.COLUMN_TRANSITION,
