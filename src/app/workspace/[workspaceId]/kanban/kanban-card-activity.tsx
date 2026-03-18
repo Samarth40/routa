@@ -122,11 +122,13 @@ export function KanbanCardActivityBar({
   sessions = [],
   currentSessionId,
   onSelectSession,
+  onCloseSession,
 }: {
   task: TaskInfo;
   sessions?: SessionInfo[];
   currentSessionId?: string;
   onSelectSession?: (sessionId: string) => void;
+  onCloseSession?: () => void;
 }) {
   const orderedSessionIds = getOrderedSessionIds(task);
   const laneSessions = task.laneSessions ?? [];
@@ -148,37 +150,50 @@ export function KanbanCardActivityBar({
 
   return (
     <div className="rounded-2xl border border-gray-200/80 bg-white/95 px-3 pt-2 pb-2 shadow-sm dark:border-[#232736] dark:bg-[#121620]">
-      <div className="flex flex-wrap items-end gap-1.5">
-        {orderedSessionIds.map((sessionId, index) => {
-          const active = sessionId === selectedRunId;
-          const laneSession = laneSessionMap.get(sessionId);
-          const laneLabel = laneSession?.columnName ?? laneSession?.columnId ?? "Run";
-          const runLabel = buildSessionDisplayLabel(sessionId, index, sessionMap);
+      <div className="flex items-start gap-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-end gap-1.5">
+          {orderedSessionIds.map((sessionId, index) => {
+            const active = sessionId === selectedRunId;
+            const laneSession = laneSessionMap.get(sessionId);
+            const laneLabel = laneSession?.columnName ?? laneSession?.columnId ?? "Run";
+            const runLabel = buildSessionDisplayLabel(sessionId, index, sessionMap);
 
-          return (
-            <button
-              key={sessionId}
-              type="button"
-              onClick={() => onSelectSession?.(sessionId)}
-              className={`inline-flex max-w-full items-center gap-1.5 rounded-t-lg border px-3 py-1.5 text-[11px] font-medium transition-colors ${
-                active
-                  ? "border-gray-300 border-b-white bg-white text-gray-900 dark:border-[#3b4158] dark:border-b-[#121620] dark:bg-[#161b27] dark:text-gray-100"
-                  : "border-gray-200 bg-gray-50 text-gray-600 hover:border-gray-300 hover:bg-white hover:text-gray-800 dark:border-gray-700 dark:bg-[#0d1018] dark:text-gray-400 dark:hover:border-gray-600 dark:hover:bg-[#131826] dark:hover:text-gray-200"
-              }`}
-              aria-pressed={active}
-              title={`${laneLabel} · Run ${index + 1} (${runLabel})`}
-            >
-              <span className="truncate font-semibold">{laneLabel}</span>
-              <span className={`rounded-md px-1.5 py-0.5 text-[10px] ${
-                active
-                  ? "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200"
-                  : "bg-white text-gray-500 dark:bg-[#141926] dark:text-gray-400"
-              }`}>
-                #{index + 1}
-              </span>
-            </button>
-          );
-        })}
+            return (
+              <button
+                key={sessionId}
+                type="button"
+                onClick={() => onSelectSession?.(sessionId)}
+                className={`inline-flex max-w-full items-center gap-1.5 rounded-t-lg border px-3 py-1.5 text-[11px] font-medium transition-colors ${
+                  active
+                    ? "border-gray-300 border-b-white bg-white text-gray-900 dark:border-[#3b4158] dark:border-b-[#121620] dark:bg-[#161b27] dark:text-gray-100"
+                    : "border-gray-200 bg-gray-50 text-gray-600 hover:border-gray-300 hover:bg-white hover:text-gray-800 dark:border-gray-700 dark:bg-[#0d1018] dark:text-gray-400 dark:hover:border-gray-600 dark:hover:bg-[#131826] dark:hover:text-gray-200"
+                }`}
+                aria-pressed={active}
+                title={`${laneLabel} · Run ${index + 1} (${runLabel})`}
+              >
+                <span className="truncate font-semibold">{laneLabel}</span>
+                <span className={`rounded-md px-1.5 py-0.5 text-[10px] ${
+                  active
+                    ? "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                    : "bg-white text-gray-500 dark:bg-[#141926] dark:text-gray-400"
+                }`}>
+                  #{index + 1}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {onCloseSession && (
+          <button
+            type="button"
+            onClick={onCloseSession}
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-sm font-semibold text-gray-500 transition-colors hover:border-gray-300 hover:bg-white hover:text-gray-800 dark:border-gray-700 dark:bg-[#0d1018] dark:text-gray-400 dark:hover:border-gray-600 dark:hover:bg-[#131826] dark:hover:text-gray-200"
+            aria-label="Close session pane"
+            title="Close session pane"
+          >
+            ×
+          </button>
+        )}
       </div>
       {(selectedLaneSession?.columnName || selectedStepLabel || selectedLaneSession?.status) && (
         <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-gray-200/80 pt-2 text-[10px] dark:border-[#232736]">

@@ -1546,6 +1546,7 @@ export function KanbanTab({
                             setActiveSessionId(sessionId);
                             acp?.selectSession(sessionId);
                           }}
+                          onCloseSession={closeTaskDetail}
                         />
                       </div>
                     )}

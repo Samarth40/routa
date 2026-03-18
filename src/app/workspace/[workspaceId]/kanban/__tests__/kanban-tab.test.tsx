@@ -485,6 +485,110 @@ describe("KanbanTab card detail manual runs", () => {
     });
     expect(runOne.getAttribute("aria-pressed")).toBe("true");
   });
+
+  it("closes the card detail from the run tabs close button", async () => {
+    vi.stubGlobal("scrollIntoView", vi.fn());
+    window.HTMLElement.prototype.scrollIntoView = vi.fn();
+
+    const acp = {
+      connected: true,
+      sessionId: null,
+      updates: [],
+      providers: [{ id: "claude", name: "Claude Code", description: "Claude Code provider", command: "claude" }],
+      selectedProvider: "claude",
+      loading: false,
+      error: null,
+      authError: null,
+      dockerConfigError: null,
+      connect: vi.fn(),
+      createSession: vi.fn(),
+      selectSession: vi.fn(),
+      setProvider: vi.fn(),
+      setMode: vi.fn(),
+      prompt: vi.fn(),
+      promptSession: vi.fn(),
+      respondToUserInput: vi.fn(),
+      writeTerminal: vi.fn(),
+      resizeTerminal: vi.fn(),
+      cancel: vi.fn(),
+      disconnect: vi.fn(),
+      clearAuthError: vi.fn(),
+      clearDockerConfigError: vi.fn(),
+      listProviderModels: vi.fn(),
+    } satisfies Partial<UseAcpState & UseAcpActions> as UseAcpState & UseAcpActions;
+
+    render(
+      <KanbanTab
+        workspaceId="workspace-1"
+        boards={[board]}
+        tasks={[{
+          ...createTask("task-1", "Story One"),
+          sessionIds: ["session-123", "session-456"],
+          laneSessions: [
+            {
+              sessionId: "session-123",
+              provider: "claude",
+              role: "DEVELOPER",
+              specialistId: "dev",
+              specialistName: "Dev Crafter",
+              status: "completed",
+              columnId: "dev",
+              columnName: "Dev",
+              startedAt: "2025-01-01T00:00:00.000Z",
+            },
+            {
+              sessionId: "session-456",
+              provider: "claude",
+              role: "GATE",
+              specialistId: "review",
+              specialistName: "Review Guard",
+              status: "completed",
+              columnId: "review",
+              columnName: "Review",
+              startedAt: "2025-01-01T00:05:00.000Z",
+            },
+          ],
+        }]}
+        sessions={[
+          {
+            sessionId: "session-123",
+            workspaceId: "workspace-1",
+            cwd: "/tmp/repo",
+            provider: "claude",
+            role: "DEVELOPER",
+            createdAt: "2025-01-01T00:00:00.000Z",
+            name: "Initial run",
+          },
+          {
+            sessionId: "session-456",
+            workspaceId: "workspace-1",
+            cwd: "/tmp/repo",
+            provider: "claude",
+            role: "GATE",
+            createdAt: "2025-01-01T00:05:00.000Z",
+            name: "Verify run",
+          },
+        ]}
+        providers={[]}
+        specialists={[]}
+        codebases={[]}
+        onRefresh={vi.fn()}
+        acp={acp}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Story One" }));
+
+    await screen.findByRole("button", { name: /Close session pane/i });
+    expect(screen.getByText("Card Detail")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /Close session pane/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: /Close session pane/i })).toBeNull();
+    });
+    expect(screen.queryByText("Card Detail")).toBeNull();
+  });
 });
 
 describe("KanbanTab quick ACP assignment", () => {
