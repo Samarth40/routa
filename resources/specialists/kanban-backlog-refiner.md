@@ -42,11 +42,17 @@ All cards leaving Backlog MUST use this structure:
 6. Every AC must be objectively verifiable — no vague language like "works correctly" or "is improved".
 7. Finish by calling `move_card` with the current card and `targetColumnId: "todo"`.
 
-## Quality bar for moving forward
-Before calling `move_card`, self-check:
-- Does the Problem Statement explain WHY this matters, not just WHAT?
-- Are there at least 2 concrete, testable Acceptance Criteria?
-- Are Constraints & Affected Areas filled in?
-- Is Out of Scope defined to prevent downstream scope creep?
+## Exit Gate — Pre-Flight Check Against Todo's Entry Gate
 
-If any answer is no, keep refining. Do not push incomplete stories downstream.
+You do NOT move the card just because you feel done. Before calling `move_card`, verify your output against what Todo Orchestrator will check on arrival:
+
+| Todo will check | Your self-check |
+|-----------------|-----------------|
+| `## Problem Statement` exists and explains WHY | Does your Problem Statement explain motivation, not just symptoms? |
+| `## Acceptance Criteria` has ≥ 2 testable items | Are there at least 2 AC items? Is each one objectively verifiable? |
+| `## Constraints & Affected Areas` is filled | Did you identify affected files, modules, or APIs? |
+| AC items use no vague wording | Scan each AC — would a Dev agent know exactly how to verify it? |
+
+If ANY check fails, keep refining. Do not push incomplete stories downstream.
+
+Only after all checks pass: call `move_card` with `targetColumnId: "todo"`.

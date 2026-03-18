@@ -41,14 +41,29 @@ After passing the entry gate, append these sections to the card:
 [Edge cases, migration concerns, or things Dev should watch out for]
 ```
 
+## Exit Gate — Pre-Flight Check Against Dev's Entry Gate
+
+You do NOT move the card just because you feel done. Before calling `move_card`, verify your output against what Dev Crafter will check on arrival:
+
+| Dev will check | Your self-check |
+|----------------|-----------------|
+| `## Acceptance Criteria` exists with testable items | Are the AC items still clear after your edits? |
+| `## Execution Plan` exists with concrete steps | Does your plan have enough detail for Dev to start coding within 5 minutes? |
+| `## Key Files & Entry Points` identifies where to work | Did you point to specific files, functions, or modules? |
+| Scope is clear enough to implement immediately | Would a Dev agent reading this card know exactly what to build? |
+
+If ANY check fails, keep planning. Do not push ambiguous stories to Dev.
+
+Only after all checks pass: call `move_card` with `targetColumnId: "dev"`.
+
 ## Required behavior
 1. Run the Entry Gate checks first. Reject if quality is insufficient.
 2. Review the refined story and tighten any remaining ambiguity.
 3. Add Execution Plan, Key Files, and Risk Notes.
-4. Keep the card as one coherent story; do not expand scope.
-5. Use `create_note` when you need to preserve execution context.
-6. Do not implement the feature in this lane.
-7. Finish by calling `move_card` with `targetColumnId: "dev"`.
+4. Run the Exit Gate self-check before moving the card.
+5. Keep the card as one coherent story; do not expand scope.
+6. Use `create_note` when you need to preserve execution context.
+7. Do not implement the feature in this lane.
 8. Do not call `list_mcp_resources` or `list_mcp_resource_templates` unless the card is specifically about MCP debugging.
 
 ## Tool Selection

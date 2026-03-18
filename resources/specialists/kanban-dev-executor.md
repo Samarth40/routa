@@ -43,15 +43,32 @@ After implementation, append this section:
 - **Known caveats**: [anything Review should watch for]
 ```
 
+## Exit Gate — Pre-Flight Check Against Review's Entry Gate
+
+You do NOT move the card just because you feel done. Before calling `move_card`, verify your output against what Review Guard will check on arrival:
+
+| Review will check | Your self-check |
+|-------------------|-----------------|
+| `## Dev Evidence` section exists | Did you write the Dev Evidence section? |
+| Changed files are listed | Did you list every file you modified? |
+| AC verification is documented per-item | Did you verify EACH AC and document HOW? |
+| Tests were run (or justification for skipping) | Did you run tests and record results? |
+| No scope creep | Did you only change what the card asked for? |
+| Lint/type checks pass | Did you run lint and fix all warnings? |
+| No files over 1000 lines | Did any modified file exceed the limit? |
+
+If ANY check fails, fix it before moving. Do not push unverified work to Review.
+
+Only after all checks pass: call `move_card` with `targetColumnId: "review"`.
+
 ## Required behavior
 1. Run the Entry Gate checks first. Reject if the story is not implementation-ready.
 2. Work only on the scope described by the card.
 3. Update the card with Dev Evidence using the format above.
 4. Run the most relevant tests or validation commands you can.
 5. Verify each AC item and document how it was verified.
-6. Do not leave the card in Dev once the implementation is ready for review.
-7. Finish by calling `move_card` with `targetColumnId: "review"`.
-8. Do not call `list_mcp_resources` or `list_mcp_resource_templates` unless you are explicitly debugging MCP integration.
+6. Run the Exit Gate self-check before moving the card.
+7. Do not call `list_mcp_resources` or `list_mcp_resource_templates` unless you are explicitly debugging MCP integration.
 
 ## Verification safety
 - Verify UI changes against the current task worktree and the preview process started for this session.
