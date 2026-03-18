@@ -26,6 +26,23 @@ export interface KanbanDevSessionSupervisionInfo {
   completionRequirement: KanbanDevSessionCompletionRequirement;
 }
 
+export interface ArtifactInfo {
+  id: string;
+  type: "screenshot" | "test_results" | "code_diff" | "logs";
+  taskId: string;
+  providedByAgentId?: string;
+  requestedByAgentId?: string;
+  requestId?: string;
+  content?: string;
+  context?: string;
+  status: "pending" | "provided" | "expired";
+  workspaceId: string;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt?: string;
+  metadata?: Record<string, string>;
+}
+
 export interface TaskInfo {
   id: string;
   title: string;

@@ -272,6 +272,41 @@ function initializeSqliteTables(db: SqliteDatabase): void {
     )
   `);
 
+  db.run(sql`
+    CREATE TABLE IF NOT EXISTS artifacts (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      task_id TEXT NOT NULL,
+      workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+      provided_by_agent_id TEXT,
+      requested_by_agent_id TEXT,
+      request_id TEXT,
+      content TEXT,
+      context TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      expires_at INTEGER,
+      metadata TEXT,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
+    )
+  `);
+
+  db.run(sql`
+    CREATE TABLE IF NOT EXISTS artifact_requests (
+      id TEXT PRIMARY KEY,
+      from_agent_id TEXT NOT NULL,
+      to_agent_id TEXT NOT NULL,
+      artifact_type TEXT NOT NULL,
+      task_id TEXT NOT NULL,
+      workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+      context TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      artifact_id TEXT,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
+    )
+  `);
+
   db.run(sql`DROP INDEX IF EXISTS kanban_boards_workspace_default_idx`);
 
   db.run(sql`

@@ -56,6 +56,7 @@ const RECOMMENDED_AUTOMATION_BY_STAGE: Partial<Record<KanbanColumnStage, KanbanC
       specialistName: "Review Guard",
     }],
     transitionType: "entry",
+    requiredArtifacts: ["screenshot"],
     autoAdvanceOnSuccess: false,
   },
   blocked: {
@@ -137,7 +138,7 @@ export function applyRecommendedAutomationToColumns(columns: KanbanColumn[]): Ka
         specialistId: recommendedPrimaryStep?.specialistId,
         specialistName: recommendedPrimaryStep?.specialistName,
         transitionType: currentAutomation.transitionType ?? recommended.transitionType,
-        requiredArtifacts: currentAutomation.requiredArtifacts,
+        requiredArtifacts: currentAutomation.requiredArtifacts ?? recommended.requiredArtifacts,
         autoAdvanceOnSuccess: recommended.autoAdvanceOnSuccess,
       }),
     };

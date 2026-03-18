@@ -11,9 +11,11 @@ import { KanbanCardActivityPanel } from "./kanban-card-activity";
 import { KanbanDescriptionEditor } from "./kanban-description-editor";
 import { getOrderedSessionIds, getSpecialistName, type KanbanSpecialistOption as SpecialistOption } from "./kanban-card-session-utils";
 export { KanbanCardActivityBar } from "./kanban-card-activity";
+import { KanbanCardArtifacts } from "./kanban-card-artifacts";
 
 export interface KanbanCardDetailProps {
   task: TaskInfo;
+  refreshSignal?: number;
   boardColumns?: KanbanColumnInfo[];
   availableProviders: AcpProviderInfo[];
   specialists: SpecialistOption[];
@@ -53,6 +55,7 @@ function formatAutomationStepSummary(
 
 export function KanbanCardDetail({
   task,
+  refreshSignal,
   boardColumns,
   availableProviders,
   specialists,
@@ -93,6 +96,10 @@ export function KanbanCardDetail({
 
   const currentLane = useMemo(
     () => boardColumns?.find((column) => column.id === (task.columnId ?? "backlog")),
+    [boardColumns, task.columnId],
+  );
+  const nextTransitionArtifacts = useMemo(
+    () => resolveKanbanTransitionArtifacts(boardColumns ?? [], task.columnId),
     [boardColumns, task.columnId],
   );
   const orderedSessionIds = useMemo(() => getOrderedSessionIds(task), [task]);
@@ -205,6 +212,13 @@ export function KanbanCardDetail({
             onRetryTrigger={onRetryTrigger}
             onProviderChange={onProviderChange}
             compact={compactMode}
+          />
+
+          <KanbanCardArtifacts
+            taskId={task.id}
+            compact={compactMode}
+            requiredArtifacts={nextTransitionArtifacts.nextRequiredArtifacts}
+            refreshSignal={refreshSignal}
           />
 
           {!splitMode && (

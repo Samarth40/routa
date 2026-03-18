@@ -94,6 +94,7 @@ export function buildTaskPrompt(
         "- **list_artifacts**: Check whether the required artifacts already exist for this card",
         "- **provide_artifact**: Save test results, code diffs, or other evidence as structured Kanban artifacts",
         "- **capture_screenshot**: Capture and store a screenshot artifact when visual proof is required",
+        "- **update_card is not an artifact tool**: Use it for card metadata only, never as a substitute for evidence upload",
         `- **move_card**: Move this card to the next column when your work is complete. Use cardId: "${task.id}", targetColumnId: "${nextColumnId ?? "todo"}"`,
       ]
     : [
@@ -102,6 +103,7 @@ export function buildTaskPrompt(
         "- **list_artifacts**: Check whether the required artifacts already exist for this card",
         "- **provide_artifact**: Save test results, code diffs, or other evidence as structured Kanban artifacts",
         "- **capture_screenshot**: Capture and store a screenshot artifact when visual proof is required",
+        "- **update_card is not an artifact tool**: Use it for card metadata only, never as a substitute for evidence upload",
         "- **request_previous_lane_handoff**: Ask the immediately previous lane to prepare environment, rerun a command, or clarify setup for this card",
         "- **submit_lane_handoff**: Finish a lane handoff request after you complete the requested support work",
         ...(canAdvanceToNextColumn
@@ -157,6 +159,7 @@ export function buildTaskPrompt(
       ? `Before you call \`move_card\`, make sure ${formatArtifactSummary(transitionArtifacts.nextRequiredArtifacts)} exist as artifacts on task ${task.id}.`
       : "If no artifact gate is listed, you still should leave concise evidence in the card update.",
     "Use `list_artifacts` to confirm what already exists, then use `provide_artifact` or `capture_screenshot` to fill gaps.",
+    "Do not treat `update_card` text as artifact evidence. Artifact gates are satisfied only by stored artifacts.",
     "",
   ];
 

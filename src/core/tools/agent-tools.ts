@@ -41,6 +41,7 @@ import { ConversationStore } from "../store/conversation-store";
 import { TaskStore } from "../store/task-store";
 import { ArtifactStore } from "../store/artifact-store";
 import { EventBus, AgentEventType } from "../events/event-bus";
+import { getKanbanEventBroadcaster } from "../kanban/kanban-event-broadcaster";
 import { ToolResult, successResult, errorResult } from './tool-result';
 import { applySandboxPermissionConstraints, SandboxPermissionConstraints } from "../sandbox";
 import {
@@ -55,6 +56,16 @@ function extractSandboxId(options?: PermissionRequestOptions): string | undefine
   return typeof sandboxId === "string" && sandboxId.trim().length > 0
     ? sandboxId.trim()
     : undefined;
+}
+
+function notifyKanbanArtifactChanged(workspaceId: string, taskId: string): void {
+  getKanbanEventBroadcaster().notify({
+    workspaceId,
+    entity: "task",
+    action: "updated",
+    resourceId: taskId,
+    source: "agent",
+  });
 }
 
 export class AgentTools {
@@ -920,6 +931,7 @@ export class AgentTools {
       },
       timestamp: new Date(),
     });
+    notifyKanbanArtifactChanged(workspaceId, taskId);
 
     return successResult({
       artifactId: artifact.id,
@@ -1133,6 +1145,7 @@ export class AgentTools {
         },
         timestamp: new Date(),
       });
+      notifyKanbanArtifactChanged(workspaceId, taskId);
 
       return successResult({
         artifactId: artifact.id,

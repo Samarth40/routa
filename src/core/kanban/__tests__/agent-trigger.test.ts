@@ -105,6 +105,8 @@ describe("buildTaskPrompt", () => {
     expect(prompt).toContain("Use `list_artifacts`");
     expect(prompt).toContain("provide_artifact");
     expect(prompt).toContain("capture_screenshot");
+    expect(prompt).toContain("update_card is not an artifact tool");
+    expect(prompt).toContain("Do not treat `update_card` text as artifact evidence");
   });
 
   it("adds previous-lane handoff guidance for review sessions", () => {

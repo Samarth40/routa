@@ -14,7 +14,7 @@ import { ToolMode } from "./routa-mcp-tool-manager";
 
 /**
  * Essential tools for weak models - minimum viable coordination.
- * Core coordination tools plus Kanban tools for card-assigned agents.
+ * Core coordination tools plus Kanban and artifact tools for card-assigned agents.
  */
 const ESSENTIAL_TOOL_NAMES = new Set([
   "list_agents",
@@ -31,6 +31,13 @@ const ESSENTIAL_TOOL_NAMES = new Set([
   "move_card",
   "request_previous_lane_handoff",
   "submit_lane_handoff",
+  // Artifact tools - needed for Kanban evidence gates
+  "request_artifact",
+  "provide_artifact",
+  "list_artifacts",
+  "get_artifact",
+  "list_pending_artifact_requests",
+  "capture_screenshot",
 ]);
 
 export async function executeMcpTool(
@@ -242,6 +249,56 @@ export async function executeMcpTool(
     case "unsubscribe_from_events":
       return formatResult(
         await tools.unsubscribeFromEvents(args.subscriptionId as string)
+      );
+
+    // ── Artifact tools ───────────────────────────────────────────────
+    case "request_artifact":
+      return formatResult(
+        await tools.requestArtifact({
+          fromAgentId: args.fromAgentId as string,
+          toAgentId: args.toAgentId as string,
+          artifactType: args.artifactType as "screenshot" | "test_results" | "code_diff" | "logs",
+          taskId: args.taskId as string,
+          workspaceId: (args.workspaceId as string) ?? workspace,
+          context: args.context as string | undefined,
+        })
+      );
+    case "provide_artifact":
+      return formatResult(
+        await tools.provideArtifact({
+          agentId: args.agentId as string,
+          type: args.type as "screenshot" | "test_results" | "code_diff" | "logs",
+          taskId: args.taskId as string,
+          workspaceId: (args.workspaceId as string) ?? workspace,
+          content: args.content as string,
+          context: args.context as string | undefined,
+          requestId: args.requestId as string | undefined,
+          metadata: args.metadata as Record<string, string> | undefined,
+        })
+      );
+    case "list_artifacts":
+      return formatResult(
+        await tools.listArtifacts({
+          taskId: args.taskId as string,
+          type: args.type as "screenshot" | "test_results" | "code_diff" | "logs" | undefined,
+        })
+      );
+    case "get_artifact":
+      return formatResult(await tools.getArtifact(args.artifactId as string));
+    case "list_pending_artifact_requests":
+      return formatResult(await tools.listPendingArtifactRequests(args.agentId as string));
+    case "capture_screenshot":
+      return formatResult(
+        await tools.captureScreenshot({
+          agentId: args.agentId as string,
+          taskId: args.taskId as string,
+          workspaceId: (args.workspaceId as string) ?? workspace,
+          url: args.url as string | undefined,
+          fullPage: args.fullPage as boolean | undefined,
+          annotate: args.annotate as boolean | undefined,
+          context: args.context as string | undefined,
+          outputPath: args.outputPath as string | undefined,
+        })
       );
 
     // ── Note tools ───────────────────────────────────────────────────
@@ -959,6 +1016,90 @@ export function getMcpToolDefinitions(toolMode: ToolMode = "essential") {
           branch: { type: "string", description: "Git branch name" },
         },
         required: ["id", "title"],
+      },
+    },
+    // ── Artifact tools ──────────────────────────────────────────────
+    {
+      name: "request_artifact",
+      description: "Request an artifact from another agent, such as a screenshot or test results.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          fromAgentId: { type: "string", description: "ID of the requesting agent" },
+          toAgentId: { type: "string", description: "ID of the agent to provide the artifact" },
+          artifactType: { type: "string", enum: ["screenshot", "test_results", "code_diff", "logs"], description: "Artifact type" },
+          taskId: { type: "string", description: "Task/card ID" },
+          context: { type: "string", description: "Context or instructions for the request" },
+        },
+        required: ["fromAgentId", "toAgentId", "artifactType", "taskId"],
+      },
+    },
+    {
+      name: "provide_artifact",
+      description: "Attach structured evidence to a task/card, such as screenshots, diffs, logs, or test output.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          agentId: { type: "string", description: "ID of the providing agent" },
+          type: { type: "string", enum: ["screenshot", "test_results", "code_diff", "logs"], description: "Artifact type" },
+          taskId: { type: "string", description: "Task/card ID" },
+          content: { type: "string", description: "Artifact content. Use base64 for screenshots." },
+          context: { type: "string", description: "Description or context" },
+          requestId: { type: "string", description: "Optional request ID being fulfilled" },
+          metadata: { type: "object", additionalProperties: { type: "string" }, description: "Optional metadata such as filename or mediaType" },
+        },
+        required: ["agentId", "type", "taskId", "content"],
+      },
+    },
+    {
+      name: "list_artifacts",
+      description: "List the artifacts attached to a task/card.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          taskId: { type: "string", description: "Task/card ID" },
+          type: { type: "string", enum: ["screenshot", "test_results", "code_diff", "logs"], description: "Optional artifact type filter" },
+        },
+        required: ["taskId"],
+      },
+    },
+    {
+      name: "get_artifact",
+      description: "Get a specific artifact by ID.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          artifactId: { type: "string", description: "Artifact ID" },
+        },
+        required: ["artifactId"],
+      },
+    },
+    {
+      name: "list_pending_artifact_requests",
+      description: "List pending artifact requests assigned to an agent.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          agentId: { type: "string", description: "Agent ID" },
+        },
+        required: ["agentId"],
+      },
+    },
+    {
+      name: "capture_screenshot",
+      description: "Capture a screenshot with agent-browser and store it as a screenshot artifact on the task/card.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          agentId: { type: "string", description: "ID of the providing agent" },
+          taskId: { type: "string", description: "Task/card ID" },
+          url: { type: "string", description: "Optional URL to open before capturing" },
+          fullPage: { type: "boolean", description: "Capture full page" },
+          annotate: { type: "boolean", description: "Annotate interactive elements" },
+          context: { type: "string", description: "Description or context" },
+          outputPath: { type: "string", description: "Optional output path for the captured screenshot" },
+        },
+        required: ["agentId", "taskId"],
       },
     },
     // ── Kanban tools ──────────────────────────────────────────────────

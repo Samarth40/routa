@@ -24,6 +24,7 @@ interface SpecialistOption {
 
 interface KanbanTabProps {
   workspaceId: string;
+  refreshSignal?: number;
   boards: KanbanBoardInfo[];
   tasks: TaskInfo[];
   sessions: SessionInfo[];
@@ -111,6 +112,7 @@ function formatLaneAutomationSummary(
 
 export function KanbanTab({
   workspaceId,
+  refreshSignal,
   boards,
   tasks,
   sessions,
@@ -189,6 +191,7 @@ export function KanbanTab({
   // Delete confirmation modal state
   const [deleteConfirmTask, setDeleteConfirmTask] = useState<TaskInfo | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [moveError, setMoveError] = useState<string | null>(null);
   const detailSplitContainerRef = useRef<HTMLDivElement | null>(null);
   const bgAgentPanelRef = useRef<HTMLDivElement | null>(null);
 
@@ -947,6 +950,7 @@ export function KanbanTab({
   async function moveTask(taskId: string, targetColumnId: string) {
     const movingTask = localTasks.find((task) => task.id === taskId);
     if (!movingTask) return;
+    setMoveError(null);
 
     let shouldCleanupWorktree = false;
     if (targetColumnId === "done" && movingTask.worktreeId) {
@@ -992,9 +996,11 @@ export function KanbanTab({
       if (updated.triggerSessionId && updated.triggerSessionId !== movingTask.triggerSessionId) {
         openSession(updated.triggerSessionId);
       }
+      setMoveError(null);
       onRefresh();
     } catch (error) {
       console.error(error);
+      setMoveError(error instanceof Error ? error.message : "Failed to move task");
       setLocalTasks(tasks);
     }
   }
@@ -1026,6 +1032,20 @@ export function KanbanTab({
   return (
     <div className="flex flex-col h-full space-y-2">
       {kanbanHeader}
+      {moveError && (
+        <div className="shrink-0 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-900/10 dark:text-rose-300">
+          <div className="flex items-start justify-between gap-3">
+            <div className="leading-6">{moveError}</div>
+            <button
+              type="button"
+              onClick={() => setMoveError(null)}
+              className="shrink-0 rounded-lg border border-rose-200 px-2 py-1 text-xs font-medium text-rose-700 transition hover:bg-rose-100 dark:border-rose-900/50 dark:text-rose-300 dark:hover:bg-rose-900/20"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
       <div className="shrink-0 rounded-2xl border border-gray-200/70 bg-white px-4 py-2 dark:border-[#1c1f2e] dark:bg-[#12141c]">
         <div className="flex flex-col gap-1.5 lg:flex-row lg:items-center lg:justify-between lg:gap-3">
           <div className="flex min-w-0 flex-1 flex-col gap-1.5 lg:flex-row lg:items-center lg:gap-2">
@@ -1363,6 +1383,7 @@ export function KanbanTab({
                     <KanbanCardDetail
                       key={task.id}
                       task={task}
+                      refreshSignal={refreshSignal}
                       boardColumns={board?.columns ?? []}
                       availableProviders={availableProviders}
                       specialists={specialists}

@@ -23,6 +23,7 @@ describe("applyRecommendedAutomationToColumns", () => {
       "GATE",
     ]);
     expect(columns.every((column) => column.automation?.autoAdvanceOnSuccess === false)).toBe(true);
+    expect(columns[3]?.automation?.requiredArtifacts).toEqual(["screenshot"]);
   });
 
   it("backfills legacy lane automation without keeping system auto-advance", () => {
@@ -60,5 +61,13 @@ describe("applyRecommendedAutomationToColumns", () => {
 
     expect(columns[0].automation?.steps?.[0]?.specialistId).toBe("custom-dev-sweeper");
     expect(columns[0].automation?.autoAdvanceOnSuccess).toBe(true);
+  });
+
+  it("backfills the review screenshot gate when the lane has no explicit artifact policy", () => {
+    const columns = applyRecommendedAutomationToColumns([
+      DEFAULT_KANBAN_COLUMNS[3],
+    ]);
+
+    expect(columns[0].automation?.requiredArtifacts).toEqual(["screenshot"]);
   });
 });

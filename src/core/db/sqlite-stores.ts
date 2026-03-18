@@ -14,6 +14,7 @@ import type { Task, TaskStatus } from "../models/task";
 import type { Message, MessageRole } from "../models/message";
 import type { Note, NoteType, NoteMetadata } from "../models/note";
 import type { KanbanBoard } from "../models/kanban";
+import type { Artifact, ArtifactRequest, ArtifactType } from "../models/artifact";
 import { createSpecNote, SPEC_NOTE_ID } from "../models/note";
 import type { WorkspaceStore } from "./pg-workspace-store";
 import type { AgentStore } from "../store/agent-store";
@@ -22,6 +23,7 @@ import type { ConversationStore } from "../store/conversation-store";
 import type { NoteStore } from "../store/note-store";
 import type { AcpSessionStore, AcpSession, AcpSessionNotification } from "../store/acp-session-store";
 import type { KanbanBoardStore } from "../store/kanban-board-store";
+import type { ArtifactStore } from "../store/artifact-store";
 
 type SqliteDb = BetterSQLite3Database<typeof sqliteSchema>;
 
@@ -744,6 +746,199 @@ export class SqliteKanbanBoardStore implements KanbanBoardStore {
       name: row.name,
       isDefault: row.isDefault,
       columns: row.columns,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  }
+}
+
+export class SqliteArtifactStore implements ArtifactStore {
+  constructor(private db: SqliteDb) {}
+
+  async saveArtifact(artifact: Artifact): Promise<void> {
+    await this.db
+      .insert(sqliteSchema.artifacts)
+      .values({
+        id: artifact.id,
+        type: artifact.type,
+        taskId: artifact.taskId,
+        workspaceId: artifact.workspaceId,
+        providedByAgentId: artifact.providedByAgentId,
+        requestedByAgentId: artifact.requestedByAgentId,
+        requestId: artifact.requestId,
+        content: artifact.content,
+        context: artifact.context,
+        status: artifact.status,
+        expiresAt: artifact.expiresAt,
+        metadata: artifact.metadata,
+        createdAt: artifact.createdAt,
+        updatedAt: artifact.updatedAt,
+      })
+      .onConflictDoUpdate({
+        target: sqliteSchema.artifacts.id,
+        set: {
+          type: artifact.type,
+          taskId: artifact.taskId,
+          workspaceId: artifact.workspaceId,
+          providedByAgentId: artifact.providedByAgentId,
+          requestedByAgentId: artifact.requestedByAgentId,
+          requestId: artifact.requestId,
+          content: artifact.content,
+          context: artifact.context,
+          status: artifact.status,
+          expiresAt: artifact.expiresAt,
+          metadata: artifact.metadata,
+          updatedAt: new Date(),
+        },
+      });
+  }
+
+  async getArtifact(artifactId: string): Promise<Artifact | undefined> {
+    const rows = await this.db
+      .select()
+      .from(sqliteSchema.artifacts)
+      .where(eq(sqliteSchema.artifacts.id, artifactId))
+      .limit(1);
+    return rows[0] ? this.toArtifactModel(rows[0]) : undefined;
+  }
+
+  async listByTask(taskId: string): Promise<Artifact[]> {
+    const rows = await this.db
+      .select()
+      .from(sqliteSchema.artifacts)
+      .where(eq(sqliteSchema.artifacts.taskId, taskId));
+    return rows.map((row) => this.toArtifactModel(row));
+  }
+
+  async listByTaskAndType(taskId: string, type: ArtifactType): Promise<Artifact[]> {
+    const rows = await this.db
+      .select()
+      .from(sqliteSchema.artifacts)
+      .where(and(eq(sqliteSchema.artifacts.taskId, taskId), eq(sqliteSchema.artifacts.type, type)));
+    return rows.map((row) => this.toArtifactModel(row));
+  }
+
+  async listByProvider(agentId: string): Promise<Artifact[]> {
+    const rows = await this.db
+      .select()
+      .from(sqliteSchema.artifacts)
+      .where(eq(sqliteSchema.artifacts.providedByAgentId, agentId));
+    return rows.map((row) => this.toArtifactModel(row));
+  }
+
+  async deleteArtifact(artifactId: string): Promise<void> {
+    await this.db.delete(sqliteSchema.artifacts).where(eq(sqliteSchema.artifacts.id, artifactId));
+  }
+
+  async deleteByTask(taskId: string): Promise<void> {
+    await this.db.delete(sqliteSchema.artifacts).where(eq(sqliteSchema.artifacts.taskId, taskId));
+  }
+
+  async saveRequest(request: ArtifactRequest): Promise<void> {
+    await this.db
+      .insert(sqliteSchema.artifactRequests)
+      .values({
+        id: request.id,
+        fromAgentId: request.fromAgentId,
+        toAgentId: request.toAgentId,
+        artifactType: request.artifactType,
+        taskId: request.taskId,
+        workspaceId: request.workspaceId,
+        context: request.context,
+        status: request.status,
+        artifactId: request.artifactId,
+        createdAt: request.createdAt,
+        updatedAt: request.updatedAt,
+      })
+      .onConflictDoUpdate({
+        target: sqliteSchema.artifactRequests.id,
+        set: {
+          fromAgentId: request.fromAgentId,
+          toAgentId: request.toAgentId,
+          artifactType: request.artifactType,
+          taskId: request.taskId,
+          workspaceId: request.workspaceId,
+          context: request.context,
+          status: request.status,
+          artifactId: request.artifactId,
+          updatedAt: new Date(),
+        },
+      });
+  }
+
+  async getRequest(requestId: string): Promise<ArtifactRequest | undefined> {
+    const rows = await this.db
+      .select()
+      .from(sqliteSchema.artifactRequests)
+      .where(eq(sqliteSchema.artifactRequests.id, requestId))
+      .limit(1);
+    return rows[0] ? this.toRequestModel(rows[0]) : undefined;
+  }
+
+  async listPendingRequests(toAgentId: string): Promise<ArtifactRequest[]> {
+    const rows = await this.db
+      .select()
+      .from(sqliteSchema.artifactRequests)
+      .where(and(
+        eq(sqliteSchema.artifactRequests.toAgentId, toAgentId),
+        eq(sqliteSchema.artifactRequests.status, "pending"),
+      ));
+    return rows.map((row) => this.toRequestModel(row));
+  }
+
+  async listRequestsByTask(taskId: string): Promise<ArtifactRequest[]> {
+    const rows = await this.db
+      .select()
+      .from(sqliteSchema.artifactRequests)
+      .where(eq(sqliteSchema.artifactRequests.taskId, taskId));
+    return rows.map((row) => this.toRequestModel(row));
+  }
+
+  async updateRequestStatus(
+    requestId: string,
+    status: ArtifactRequest["status"],
+    artifactId?: string,
+  ): Promise<void> {
+    await this.db
+      .update(sqliteSchema.artifactRequests)
+      .set({
+        status,
+        artifactId,
+        updatedAt: new Date(),
+      })
+      .where(eq(sqliteSchema.artifactRequests.id, requestId));
+  }
+
+  private toArtifactModel(row: typeof sqliteSchema.artifacts.$inferSelect): Artifact {
+    return {
+      id: row.id,
+      type: row.type as ArtifactType,
+      taskId: row.taskId,
+      workspaceId: row.workspaceId,
+      providedByAgentId: row.providedByAgentId ?? undefined,
+      requestedByAgentId: row.requestedByAgentId ?? undefined,
+      requestId: row.requestId ?? undefined,
+      content: row.content ?? undefined,
+      context: row.context ?? undefined,
+      status: row.status as Artifact["status"],
+      expiresAt: row.expiresAt ?? undefined,
+      metadata: (row.metadata as Record<string, string> | null) ?? undefined,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  private toRequestModel(row: typeof sqliteSchema.artifactRequests.$inferSelect): ArtifactRequest {
+    return {
+      id: row.id,
+      fromAgentId: row.fromAgentId,
+      toAgentId: row.toAgentId,
+      artifactType: row.artifactType as ArtifactType,
+      taskId: row.taskId,
+      workspaceId: row.workspaceId,
+      context: row.context ?? undefined,
+      status: row.status as ArtifactRequest["status"],
+      artifactId: row.artifactId ?? undefined,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

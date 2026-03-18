@@ -15,6 +15,7 @@ import { InMemoryAgentStore, AgentStore } from "./store/agent-store";
 import { InMemoryConversationStore, ConversationStore } from "./store/conversation-store";
 import { InMemoryTaskStore, TaskStore } from "./store/task-store";
 import { NoteStore } from "./store/note-store";
+import { PgArtifactStore } from "./db/pg-artifact-store";
 import { WorkspaceStore, InMemoryWorkspaceStore } from "./db/pg-workspace-store";
 import { CodebaseStore, InMemoryCodebaseStore } from "./db/pg-codebase-store";
 import { WorktreeStore, InMemoryWorktreeStore } from "./db/pg-worktree-store";
@@ -151,8 +152,7 @@ export function createPgSystem(): RoutaSystem {
   // TODO: Implement PgWorkflowRunStore for persistent workflow state
   const workflowRunStore = new InMemoryWorkflowRunStore();
   const kanbanBoardStore = new PgKanbanBoardStore(db);
-  // TODO: Implement PgArtifactStore for persistent artifact storage
-  const artifactStore = new InMemoryArtifactStore();
+  const artifactStore = new PgArtifactStore(db);
   const permissionStore = new PermissionStore();
 
   // CRDT manager and broadcaster still used for real-time collab
@@ -222,8 +222,7 @@ export function createSqliteSystem(): RoutaSystem {
   let kanbanBoardStore: KanbanBoardStore;
   // TODO: Implement SqliteWorkflowRunStore for persistent workflow state
   const workflowRunStore = new InMemoryWorkflowRunStore();
-  // TODO: Implement SqliteArtifactStore for persistent artifact storage
-  const artifactStore = new InMemoryArtifactStore();
+  let artifactStore: ArtifactStore;
   const permissionStore = new PermissionStore();
   // True when noteStore doesn't broadcast on save (SqliteNoteStore); NoteTools will broadcast.
   // False when CRDTNoteStore is used as fallback (it already broadcasts internally).
@@ -244,6 +243,7 @@ export function createSqliteSystem(): RoutaSystem {
       SqliteBackgroundTaskStore,
       SqliteScheduleStore,
       SqliteKanbanBoardStore,
+      SqliteArtifactStore,
     } = require("./db/sqlite-stores") as typeof import("./db/sqlite-stores");
 
     const db = getSqliteDatabase();
@@ -257,6 +257,7 @@ export function createSqliteSystem(): RoutaSystem {
     backgroundTaskStore = new SqliteBackgroundTaskStore(db);
     scheduleStore = new SqliteScheduleStore(db);
     kanbanBoardStore = new SqliteKanbanBoardStore(db);
+    artifactStore = new SqliteArtifactStore(db);
     noteToolsBroadcast = true; // SqliteNoteStore doesn't broadcast — NoteTools must
   } catch (err) {
     // Some builds may not include sqlite native modules.
@@ -275,6 +276,7 @@ export function createSqliteSystem(): RoutaSystem {
     backgroundTaskStore = new InMemoryBackgroundTaskStore();
     scheduleStore = new InMemoryScheduleStore();
     kanbanBoardStore = new InMemoryKanbanBoardStore();
+    artifactStore = new InMemoryArtifactStore();
   }
 
   const eventBus = new EventBus();
