@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import fnmatch
 import re
+import subprocess
 from collections import defaultdict, deque
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,12 +23,35 @@ except ImportError:  # pragma: no cover - exercised via adapter selection
     get_parser = None
 
 
-_CACHE_VERSION = 3
+_CACHE_VERSION = 4
 _CACHE_DIR = ".routa-fitness"
 _FILES_CACHE_FILE = "files.json"
 _INDEX_CACHE_FILE = "index.json"
 _LEGACY_CACHE_FILE = "graph.json"
-_SCAN_ROOTS = ("src", "apps", "crates")
+_DEFAULT_IGNORE_PATTERNS = [
+    ".code-review-graph/**",
+    ".routa-fitness/**",
+    "node_modules/**",
+    ".git/**",
+    "__pycache__/**",
+    "*.pyc",
+    ".venv/**",
+    "venv/**",
+    "dist/**",
+    "build/**",
+    ".next/**",
+    "target/**",
+    "*.min.js",
+    "*.min.css",
+    "*.map",
+    "*.lock",
+    "package-lock.json",
+    "yarn.lock",
+    "*.db",
+    "*.sqlite",
+    "*.db-journal",
+    "*.db-wal",
+]
 _CODE_EXTENSIONS = {
     ".py",
     ".rs",
@@ -60,6 +85,7 @@ _SYMBOL_KINDS = {
         "interface_declaration": "Interface",
         "enum_declaration": "Enum",
         "function_declaration": "Function",
+        "method_definition": "Function",
         "variable_declarator": "Function",
     },
     "tsx": {
@@ -67,11 +93,13 @@ _SYMBOL_KINDS = {
         "interface_declaration": "Interface",
         "enum_declaration": "Enum",
         "function_declaration": "Function",
+        "method_definition": "Function",
         "variable_declarator": "Function",
     },
     "javascript": {
         "class_declaration": "Class",
         "function_declaration": "Function",
+        "method_definition": "Function",
         "variable_declarator": "Function",
     },
 }
@@ -173,31 +201,40 @@ class BuiltinGraphAdapter:
                 "edges": [],
             }
 
-        visited = set(changed_files)
-        queue = deque((path, 0) for path in changed_files)
+        seed_qns = set(changed_files)
+        for file_path in changed_files:
+            seed_qns.update(index["children_by_file"].get(file_path, []))
+
+        visited = set(seed_qns)
+        queue = deque((qualified_name, 0) for qualified_name in seed_qns)
         while queue:
             current, hops = queue.popleft()
             if hops >= depth:
                 continue
-            for neighbor in index["file_neighbors"].get(current, []):
+            for neighbor in index["node_neighbors"].get(current, []):
                 if neighbor not in visited:
                     visited.add(neighbor)
                     queue.append((neighbor, hops + 1))
 
-        impacted_files = sorted(visited - set(changed_files))
-        visible_files = set(changed_files) | set(impacted_files)
+        impacted_qns = visited - seed_qns
+        changed_nodes = self._nodes_for_qns(index, list(seed_qns))
+        impacted_nodes = self._nodes_for_qns(index, list(impacted_qns))
+        impacted_files = sorted(
+            {node["file_path"] for node in impacted_nodes} - set(changed_files)
+        )
+        visible_qns = seed_qns | impacted_qns
 
         return {
             "status": "ok",
             "summary": (
                 f"Blast radius for {len(changed_files)} changed file(s): "
-                f"{len(self._nodes_for_files(index, changed_files))} changed node(s), "
+                f"{len(changed_nodes)} changed node(s), "
                 f"{len(impacted_files)} additional file(s)."
             ),
-            "changed_nodes": self._nodes_for_files(index, changed_files),
-            "impacted_nodes": self._nodes_for_files(index, impacted_files),
+            "changed_nodes": changed_nodes,
+            "impacted_nodes": impacted_nodes,
             "impacted_files": impacted_files,
-            "edges": self._edges_for_files(index, visible_files),
+            "edges": self._edges_for_qns(index, visible_qns),
         }
 
     def query(self, query_type: str, target: str) -> dict:
@@ -313,14 +350,29 @@ class BuiltinGraphAdapter:
 
     def _collect_source_files(self) -> list[str]:
         files: list[str] = []
-        for root_name in _SCAN_ROOTS:
-            root = self.repo_root / root_name
-            if not root.exists():
+        ignore_patterns = self._load_ignore_patterns()
+        tracked = self._git_tracked_files()
+        if tracked:
+            candidates = tracked
+        else:
+            candidates = [
+                path.relative_to(self.repo_root).as_posix()
+                for path in self.repo_root.rglob("*")
+                if path.is_file()
+            ]
+
+        for rel_path in candidates:
+            if self._should_ignore(rel_path, ignore_patterns):
                 continue
-            for path in root.rglob("*"):
-                if path.is_file() and path.suffix.lower() in _CODE_EXTENSIONS:
-                    files.append(path.relative_to(self.repo_root).as_posix())
-        return sorted(files)
+            abs_path = self.repo_root / rel_path
+            if not abs_path.is_file() or abs_path.is_symlink():
+                continue
+            if Path(rel_path).suffix.lower() not in _CODE_EXTENSIONS:
+                continue
+            if self._is_binary(abs_path):
+                continue
+            files.append(rel_path)
+        return sorted(set(files))
 
     def _parse_file(self, rel_path: str, source: bytes) -> dict[str, Any]:
         language = _LANGUAGE_BY_SUFFIX.get(Path(rel_path).suffix.lower(), "unknown")
@@ -393,6 +445,7 @@ class BuiltinGraphAdapter:
         imports_by_file: dict[str, set[str]] = defaultdict(set)
         importers_by_file: dict[str, set[str]] = defaultdict(set)
         file_neighbors: dict[str, set[str]] = defaultdict(set)
+        node_neighbors: dict[str, set[str]] = defaultdict(set)
         inheritors_by_target: dict[str, set[str]] = defaultdict(set)
         tests_by_target: dict[str, set[str]] = defaultdict(set)
         callers_by_target: dict[str, set[str]] = defaultdict(set)
@@ -417,6 +470,8 @@ class BuiltinGraphAdapter:
                 child_qns.append(normalized["qualified_name"])
                 nodes_by_qn[normalized["qualified_name"]] = normalized
                 symbols_by_name_nodes[normalized["name"]].append(normalized)
+                node_neighbors[rel_path].add(normalized["qualified_name"])
+                node_neighbors[normalized["qualified_name"]].add(rel_path)
             symbols_by_file_nodes[rel_path] = symbols
             children_by_file[rel_path] = child_qns
 
@@ -428,6 +483,8 @@ class BuiltinGraphAdapter:
                 importers_by_file[imported].add(rel_path)
                 file_neighbors[rel_path].add(imported)
                 file_neighbors[imported].add(rel_path)
+                node_neighbors[rel_path].add(imported)
+                node_neighbors[imported].add(rel_path)
 
         for rel_path, symbols in symbols_by_file_nodes.items():
             for symbol in symbols:
@@ -441,6 +498,8 @@ class BuiltinGraphAdapter:
                     )
                     file_neighbors[rel_path].add(candidate["file_path"])
                     file_neighbors[candidate["file_path"]].add(rel_path)
+                    node_neighbors[symbol["qualified_name"]].add(candidate["qualified_name"])
+                    node_neighbors[candidate["qualified_name"]].add(symbol["qualified_name"])
 
         for symbols in symbols_by_file_nodes.values():
             for symbol in symbols:
@@ -452,6 +511,12 @@ class BuiltinGraphAdapter:
                             candidate["qualified_name"]
                         )
                         callers_by_target[candidate["qualified_name"]].add(
+                            symbol["qualified_name"]
+                        )
+                        node_neighbors[symbol["qualified_name"]].add(
+                            candidate["qualified_name"]
+                        )
+                        node_neighbors[candidate["qualified_name"]].add(
                             symbol["qualified_name"]
                         )
 
@@ -478,6 +543,8 @@ class BuiltinGraphAdapter:
                     )
                     file_neighbors[rel_path].add(target["file_path"])
                     file_neighbors[target["file_path"]].add(rel_path)
+                    node_neighbors[test_node["qualified_name"]].add(target["qualified_name"])
+                    node_neighbors[target["qualified_name"]].add(test_node["qualified_name"])
 
         total_edges = (
             sum(len(children) for children in children_by_file.values())
@@ -507,6 +574,7 @@ class BuiltinGraphAdapter:
             "imports_by_file": self._sorted_mapping(imports_by_file),
             "importers_by_file": self._sorted_mapping(importers_by_file),
             "file_neighbors": self._sorted_mapping(file_neighbors),
+            "node_neighbors": self._sorted_mapping(node_neighbors),
             "inheritors_by_target": self._sorted_mapping(inheritors_by_target),
             "tests_by_target": self._sorted_mapping(tests_by_target),
             "callers_by_target": self._sorted_mapping(callers_by_target),
@@ -574,7 +642,7 @@ class BuiltinGraphAdapter:
             return None
 
         text = self._node_text(node, source)
-        kind = _SYMBOL_KINDS[language][node.type]
+        parent_name = self._parent_symbol_name(language, ancestors, source)
         is_test = is_test_file or self._is_test_symbol(
             language,
             node,
@@ -583,15 +651,17 @@ class BuiltinGraphAdapter:
             source,
             ancestors,
         )
+        kind = self._symbol_kind(language, node, is_test)
 
         return {
-            "qualified_name": f"{rel_path}:{name}",
+            "qualified_name": self._qualified_name(rel_path, name, parent_name),
             "name": name,
             "kind": kind,
             "file_path": rel_path,
             "line_start": node.start_point[0] + 1,
             "line_end": node.end_point[0] + 1,
             "language": language,
+            "parent_name": parent_name,
             "is_test": is_test,
             "references": sorted(self._symbol_references(language, node, source, name)),
             "extends": self._extract_extends(language, node, source),
@@ -693,6 +763,9 @@ class BuiltinGraphAdapter:
                 if edge_key not in seen_edges:
                     seen_edges.add(edge_key)
                     edges.append(edge)
+        if not results and node["kind"] != "File":
+            for test_node in self._fallback_tests_for(index, node["name"]):
+                results[test_node["qualified_name"]] = test_node
         return sorted(results.values(), key=lambda item: item["qualified_name"]), edges
 
     def _callers_of(
@@ -800,6 +873,7 @@ class BuiltinGraphAdapter:
     def _nodes_for_files(self, index: dict[str, Any], files: list[str]) -> list[dict[str, Any]]:
         qns: list[str] = []
         for file_path in files:
+            qns.append(file_path)
             qns.extend(index["children_by_file"].get(file_path, []))
         return self._nodes_for_qns(index, qns)
 
@@ -810,31 +884,44 @@ class BuiltinGraphAdapter:
             if qualified_name in index["nodes_by_qn"]
         ]
 
-    def _edges_for_files(
+    def _edges_for_qns(
         self,
         index: dict[str, Any],
-        visible_files: set[str],
+        visible_qns: set[str],
     ) -> list[dict[str, Any]]:
         edge_map: dict[tuple[str, str, str], dict[str, Any]] = {}
+        visible_files = {
+            index["nodes_by_qn"][qualified_name]["file_path"]
+            for qualified_name in visible_qns
+            if qualified_name in index["nodes_by_qn"]
+        }
 
         for file_path in sorted(visible_files):
+            if file_path not in visible_qns:
+                continue
             for child_qn in index["children_by_file"].get(file_path, []):
+                if child_qn not in visible_qns:
+                    continue
                 edge = self._edge("CONTAINS", file_path, child_qn, file_path, file_path)
                 edge_map[self._edge_key(edge)] = edge
 
             for imported in index["imports_by_file"].get(file_path, []):
-                if imported not in visible_files:
+                if imported not in visible_qns:
                     continue
                 edge = self._edge("IMPORTS_FROM", file_path, imported, file_path, imported)
                 edge_map[self._edge_key(edge)] = edge
 
         for target_qn, child_qns in index["inheritors_by_target"].items():
+            if target_qn not in visible_qns:
+                continue
             target_node = index["nodes_by_qn"].get(target_qn)
-            if not target_node or target_node["file_path"] not in visible_files:
+            if not target_node:
                 continue
             for child_qn in child_qns:
+                if child_qn not in visible_qns:
+                    continue
                 child_node = index["nodes_by_qn"].get(child_qn)
-                if not child_node or child_node["file_path"] not in visible_files:
+                if not child_node:
                     continue
                 edge = self._edge(
                     "INHERITS",
@@ -846,12 +933,16 @@ class BuiltinGraphAdapter:
                 edge_map[self._edge_key(edge)] = edge
 
         for target_qn, test_qns in index["tests_by_target"].items():
+            if target_qn not in visible_qns:
+                continue
             target_node = index["nodes_by_qn"].get(target_qn)
-            if not target_node or target_node["file_path"] not in visible_files:
+            if not target_node:
                 continue
             for test_qn in test_qns:
+                if test_qn not in visible_qns:
+                    continue
                 test_node = index["nodes_by_qn"].get(test_qn)
-                if not test_node or test_node["file_path"] not in visible_files:
+                if not test_node:
                     continue
                 edge = self._edge(
                     "TESTED_BY",
@@ -859,6 +950,27 @@ class BuiltinGraphAdapter:
                     target_qn,
                     test_node["file_path"],
                     target_node["file_path"],
+                )
+                edge_map[self._edge_key(edge)] = edge
+
+        for source_qn, callee_qns in index["callees_by_source"].items():
+            if source_qn not in visible_qns:
+                continue
+            source_node = index["nodes_by_qn"].get(source_qn)
+            if not source_node:
+                continue
+            for callee_qn in callee_qns:
+                if callee_qn not in visible_qns:
+                    continue
+                callee_node = index["nodes_by_qn"].get(callee_qn)
+                if not callee_node:
+                    continue
+                edge = self._edge(
+                    "CALLS",
+                    source_qn,
+                    callee_qn,
+                    source_node["file_path"],
+                    callee_node["file_path"],
                 )
                 edge_map[self._edge_key(edge)] = edge
 
@@ -940,18 +1052,114 @@ class BuiltinGraphAdapter:
             if values
         }
 
+    def _qualified_name(self, rel_path: str, name: str, parent_name: str | None) -> str:
+        if parent_name:
+            return f"{rel_path}:{parent_name}.{name}"
+        return f"{rel_path}:{name}"
+
+    def _symbol_kind(self, language: str, node, is_test: bool) -> str:
+        base_kind = _SYMBOL_KINDS[language][node.type]
+        if is_test and base_kind == "Function":
+            return "Test"
+        return base_kind
+
+    def _parent_symbol_name(
+        self,
+        language: str,
+        ancestors: list[Any],
+        source: bytes,
+    ) -> str | None:
+        for ancestor in reversed(ancestors):
+            if ancestor.type == "impl_item" and language == "rust":
+                return self._rust_impl_name(ancestor, source) or None
+            if ancestor.type in _SYMBOL_KINDS.get(language, {}):
+                return self._symbol_name(language, ancestor, source) or None
+        return None
+
+    def _fallback_tests_for(
+        self,
+        index: dict[str, Any],
+        name: str,
+    ) -> list[dict[str, Any]]:
+        lowered = name.lower()
+        normalized_name = self._normalize_test_tokens(name)
+        results: dict[str, dict[str, Any]] = {}
+        for node in index["nodes_by_qn"].values():
+            if not node.get("is_test"):
+                continue
+            candidate_name = node["name"]
+            candidate_lower = candidate_name.lower()
+            if (
+                candidate_lower == f"test_{lowered}"
+                or candidate_lower == f"test{lowered}"
+                or candidate_lower == f"{lowered}_test"
+                or candidate_lower.startswith(f"test_{lowered}")
+                or candidate_lower.startswith(f"test{lowered}")
+                or normalized_name.issubset(self._normalize_test_tokens(candidate_name))
+            ):
+                results[node["qualified_name"]] = node
+        return sorted(results.values(), key=lambda item: item["qualified_name"])
+
+    def _load_ignore_patterns(self) -> list[str]:
+        patterns = list(_DEFAULT_IGNORE_PATTERNS)
+        ignore_file = self.repo_root / ".code-review-graphignore"
+        if ignore_file.exists():
+            for line in ignore_file.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    patterns.append(line)
+        return patterns
+
+    def _should_ignore(self, rel_path: str, patterns: list[str]) -> bool:
+        return any(fnmatch.fnmatch(rel_path, pattern) for pattern in patterns)
+
+    def _git_tracked_files(self) -> list[str]:
+        try:
+            result = subprocess.run(
+                ["git", "ls-files"],
+                capture_output=True,
+                text=True,
+                cwd=str(self.repo_root),
+                timeout=30,
+                check=False,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return []
+        if result.returncode != 0:
+            return []
+        return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+    def _is_binary(self, path: Path) -> bool:
+        try:
+            chunk = path.read_bytes()[:8192]
+        except (OSError, PermissionError):
+            return True
+        return b"\x00" in chunk
+
+    def _rust_impl_name(self, node, source: bytes) -> str:
+        for identifier in self._descendants(node, {"type_identifier", "identifier"}):
+            text = self._node_text(identifier, source)
+            if text != "self":
+                return text
+        return ""
+
     def _symbol_name(self, language: str, node, source: bytes) -> str:
         if language == "python":
             identifier = self._first_child(node, {"identifier"})
             return self._node_text(identifier, source) if identifier else ""
         if language == "rust":
+            if node.type == "impl_item":
+                return self._rust_impl_name(node, source)
             identifier = self._first_child(node, {"identifier", "type_identifier"})
             return self._node_text(identifier, source) if identifier else ""
         if language in {"typescript", "tsx", "javascript"}:
             if node.type == "variable_declarator":
                 identifier = self._first_child(node, {"identifier"})
                 return self._node_text(identifier, source) if identifier else ""
-            identifier = self._first_child(node, {"identifier", "type_identifier"})
+            identifier = self._first_child(
+                node,
+                {"identifier", "type_identifier", "property_identifier"},
+            )
             return self._node_text(identifier, source) if identifier else ""
         return ""
 

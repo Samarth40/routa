@@ -30,6 +30,27 @@ def test_builtin_graph_parses_typescript_and_links_tests(tmp_path: Path):
     assert [item["file_path"] for item in query["results"]] == ["src/mod.test.ts"]
 
 
+def test_builtin_graph_scans_repo_beyond_default_roots(tmp_path: Path):
+    _write(
+        tmp_path / "pkg" / "service.py",
+        "def run():\n    return 1\n",
+    )
+    _write(
+        tmp_path / "tests" / "service_test.py",
+        "from pkg.service import run\n\n\ndef test_run():\n    assert run() == 1\n",
+    )
+
+    adapter = BuiltinGraphAdapter(tmp_path)
+    build = adapter.build_or_update(full=True)
+    tests = adapter.query("tests_for", "pkg/service.py:run")
+
+    assert build["status"] == "ok"
+    assert build["files_updated"] == 2
+    assert [item["qualified_name"] for item in tests["results"]] == [
+        "tests/service_test.py:test_run"
+    ]
+
+
 def test_builtin_graph_parses_python_and_tracks_import_impact(tmp_path: Path):
     _write(
         tmp_path / "src" / "service.py",
@@ -54,6 +75,25 @@ def test_builtin_graph_parses_python_and_tracks_import_impact(tmp_path: Path):
     assert [item["qualified_name"] for item in tests["results"]] == ["src/test_service.py:test_run"]
 
 
+def test_builtin_graph_qualifies_python_class_methods(tmp_path: Path):
+    _write(
+        tmp_path / "src" / "service.py",
+        "class Service:\n    def run(self):\n        return helper()\n\n\ndef helper():\n    return 1\n",
+    )
+
+    adapter = BuiltinGraphAdapter(tmp_path)
+    adapter.build_or_update(full=True)
+    children = adapter.query("children_of", "src/service.py")
+    callees = adapter.query("callees_of", "src/service.py:Service.run")
+
+    assert {item["qualified_name"] for item in children["results"]} == {
+        "src/service.py:Service",
+        "src/service.py:Service.run",
+        "src/service.py:helper",
+    }
+    assert [item["qualified_name"] for item in callees["results"]] == ["src/service.py:helper"]
+
+
 def test_builtin_graph_parses_rust_test_attributes(tmp_path: Path):
     _write(
         tmp_path / "crates" / "demo" / "src" / "lib.rs",
@@ -72,6 +112,40 @@ def test_builtin_graph_parses_rust_test_attributes(tmp_path: Path):
         "crates/demo/src/lib.rs:compute_works"
     ]
     assert stats["backend"] == "builtin-tree-sitter"
+
+
+def test_builtin_graph_qualifies_rust_impl_methods(tmp_path: Path):
+    _write(
+        tmp_path / "crates" / "demo" / "src" / "lib.rs",
+        "struct Runner;\n\nimpl Runner {\n    fn run(&self) -> i32 {\n        helper()\n    }\n}\n\nfn helper() -> i32 {\n    1\n}\n",
+    )
+
+    adapter = BuiltinGraphAdapter(tmp_path)
+    adapter.build_or_update(full=True)
+    children = adapter.query("children_of", "crates/demo/src/lib.rs")
+    callees = adapter.query("callees_of", "crates/demo/src/lib.rs:Runner.run")
+
+    assert "crates/demo/src/lib.rs:Runner.run" in {
+        item["qualified_name"] for item in children["results"]
+    }
+    assert [item["qualified_name"] for item in callees["results"]] == [
+        "crates/demo/src/lib.rs:helper"
+    ]
+
+
+def test_builtin_graph_qualifies_typescript_class_methods(tmp_path: Path):
+    _write(
+        tmp_path / "src" / "runner.ts",
+        "class Runner {\n  run() {\n    return helper();\n  }\n}\n\nfunction helper() {\n  return 1;\n}\n",
+    )
+
+    adapter = BuiltinGraphAdapter(tmp_path)
+    adapter.build_or_update(full=True)
+    children = adapter.query("children_of", "src/runner.ts")
+    callees = adapter.query("callees_of", "src/runner.ts:Runner.run")
+
+    assert "src/runner.ts:Runner.run" in {item["qualified_name"] for item in children["results"]}
+    assert [item["qualified_name"] for item in callees["results"]] == ["src/runner.ts:helper"]
 
 
 def test_builtin_graph_queries_from_persisted_index_without_file_cache(tmp_path: Path):
