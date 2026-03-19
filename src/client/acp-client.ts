@@ -9,6 +9,8 @@
  *   - opencode stdout → SSE session/update
  */
 
+import type { McpServerProfile } from "@/core/mcp/mcp-server-profiles";
+
 export interface AcpSessionNotification {
   sessionId: string;
   update?: Record<string, unknown>;
@@ -141,6 +143,8 @@ export class BrowserAcpClient {
     toolMode?: "essential" | "full";
     /** Optional allowlist for provider-native tools such as Bash/Read/Edit. */
     allowedNativeTools?: string[];
+    /** Optional logical MCP profile, such as kanban-planning. */
+    mcpProfile?: McpServerProfile;
     model?: string;
     idempotencyKey?: string;
     specialistId?: string;
@@ -172,6 +176,7 @@ export class BrowserAcpClient {
       workspaceId: params.workspaceId,
       toolMode: params.toolMode,
       allowedNativeTools: params.allowedNativeTools,
+      mcpProfile: params.mcpProfile,
       model: params.model,
       idempotencyKey: params.idempotencyKey,
       specialistId: params.specialistId,

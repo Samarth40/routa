@@ -18,6 +18,7 @@ import {
 import type { RepoSyncState } from "./kanban-repo-sync-status";
 import type { KanbanBoardInfo, TaskInfo, SessionInfo } from "../types";
 import type { CodebaseData } from "@/client/hooks/use-workspaces";
+import type { McpServerProfile } from "@/core/mcp/mcp-server-profiles";
 
 interface SpecialistOption {
   id: string;
@@ -31,6 +32,7 @@ interface KanbanAgentPromptOptions {
   role?: string;
   toolMode?: "essential" | "full";
   allowedNativeTools?: string[];
+  mcpProfile?: McpServerProfile;
 }
 
 export function KanbanPageClient() {
@@ -371,8 +373,10 @@ export function KanbanPageClient() {
       undefined,
       undefined,
       undefined,
+      undefined,
       options?.toolMode,
       options?.allowedNativeTools,
+      options?.mcpProfile,
     );
 
     if (!result?.sessionId) {

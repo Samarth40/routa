@@ -1030,6 +1030,7 @@ describe("KanbanTab agent prompt flow", () => {
         role: "CRAFTER",
         toolMode: "full",
         allowedNativeTools: [],
+        mcpProfile: "kanban-planning",
       }),
     );
 
@@ -1076,6 +1077,7 @@ describe("KanbanTab agent prompt flow", () => {
         role: "CRAFTER",
         toolMode: "full",
         allowedNativeTools: [],
+        mcpProfile: "kanban-planning",
       }),
     );
   });

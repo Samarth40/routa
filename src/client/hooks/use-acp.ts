@@ -27,6 +27,7 @@ import {
 } from "../utils/diagnostics";
 import { loadCustomAcpProviders, loadDisabledProviders, type CustomAcpProvider } from "../utils/custom-acp-providers";
 import { loadDockerOpencodeAuthJson } from "../components/settings-panel";
+import type { McpServerProfile } from "@/core/mcp/mcp-server-profiles";
 
 /** Convert a custom ACP provider to AcpProviderInfo for the provider list. */
 function toAcpProviderInfo(cp: CustomAcpProvider): AcpProviderInfo {
@@ -76,6 +77,8 @@ export interface UseAcpActions {
       idempotencyKey?: string,
     /** Specialist ID for per-specialist model configuration */
     specialistId?: string,
+    /** Specialist locale for per-specialist resource loading */
+    specialistLocale?: string,
     /** Custom API base URL override */
     baseUrl?: string,
     /** API key override */
@@ -86,6 +89,8 @@ export interface UseAcpActions {
       toolMode?: "essential" | "full",
       /** Optional allowlist for provider-native tools such as Bash/Read/Edit */
       allowedNativeTools?: string[],
+      /** Optional logical MCP profile, such as kanban-planning */
+      mcpProfile?: McpServerProfile,
     ) => Promise<AcpNewSessionResult | null>;
   selectSession: (sessionId: string) => void;
   setProvider: (provider: string) => void;
@@ -329,6 +334,7 @@ export function useAcp(baseUrl: string = ""): UseAcpState & UseAcpActions {
       branch?: string,
       toolMode?: "essential" | "full",
       allowedNativeTools?: string[],
+      mcpProfile?: McpServerProfile,
     ): Promise<AcpNewSessionResult | null> => {
       const client = clientRef.current;
       if (!client) return null;
@@ -352,6 +358,7 @@ export function useAcp(baseUrl: string = ""): UseAcpState & UseAcpActions {
           workspaceId,
           toolMode,
           allowedNativeTools,
+          mcpProfile,
           model,
           idempotencyKey,
           specialistId,

@@ -27,6 +27,7 @@ import { getKanbanAutomationSteps, normalizeKanbanAutomation } from "@/core/mode
 import { ChatPanel } from "@/client/components/chat-panel";
 import { RepoPicker, type RepoSelection } from "@/client/components/repo-picker";
 import { KanbanRepoSyncStatus, type RepoSyncState } from "./kanban-repo-sync-status";
+import type { McpServerProfile } from "@/core/mcp/mcp-server-profiles";
 
 interface SpecialistOption {
   id: string;
@@ -58,6 +59,7 @@ interface KanbanTabProps {
       role?: string;
       toolMode?: "essential" | "full";
       allowedNativeTools?: string[];
+      mcpProfile?: McpServerProfile;
     },
   ) => Promise<string | null>;
 }
@@ -406,6 +408,7 @@ export function KanbanTab({
         role: "CRAFTER",
         toolMode: "full",
         allowedNativeTools: [],
+        mcpProfile: "kanban-planning",
       });
       if (sessionId) {
         openAgentPanel(sessionId);
