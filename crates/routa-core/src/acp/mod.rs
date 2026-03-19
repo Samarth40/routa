@@ -590,20 +590,21 @@ pub fn get_presets() -> Vec<AcpPreset> {
     ]
 }
 
-/// ACP Registry URL
-const ACP_REGISTRY_URL: &str =
-    "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json";
-
 /// Get a preset by ID, checking both static presets and registry.
 /// Static presets take precedence.
 ///
 /// Supports suffixed IDs like "auggie-registry" to explicitly request
 /// the registry version when both built-in and registry versions exist.
 pub async fn get_preset_by_id_with_registry(id: &str) -> Result<AcpPreset, String> {
+    let normalized_id = match id {
+        "codex" => "codex-acp",
+        other => other,
+    };
+
     // Handle suffixed IDs (e.g., "auggie-registry")
     // This allows explicit selection of registry version when both exist
     const REGISTRY_SUFFIX: &str = "-registry";
-    if let Some(base_id) = id.strip_suffix(REGISTRY_SUFFIX) {
+    if let Some(base_id) = normalized_id.strip_suffix(REGISTRY_SUFFIX) {
         let mut preset = get_registry_preset(base_id).await?;
         // Keep the suffixed ID in the returned preset for consistency
         preset.id = id.to_string();
@@ -611,29 +612,24 @@ pub async fn get_preset_by_id_with_registry(id: &str) -> Result<AcpPreset, Strin
     }
 
     // Check static presets first (match by id, not name)
-    if let Some(preset) = get_presets().into_iter().find(|p| p.id == id) {
+    if let Some(mut preset) = get_presets().into_iter().find(|p| p.id == normalized_id) {
+        if preset.id != id {
+            preset.id = id.to_string();
+        }
         return Ok(preset);
     }
 
     // Fall back to registry
-    get_registry_preset(id).await
+    let mut preset = get_registry_preset(normalized_id).await?;
+    if preset.id != id {
+        preset.id = id.to_string();
+    }
+    Ok(preset)
 }
 
 /// Get a preset from the ACP registry by ID.
 async fn get_registry_preset(id: &str) -> Result<AcpPreset, String> {
-    // Fetch registry
-    let response = reqwest::get(ACP_REGISTRY_URL)
-        .await
-        .map_err(|e| format!("Failed to fetch ACP registry: {}", e))?;
-
-    if !response.status().is_success() {
-        return Err(format!("Registry fetch failed: {}", response.status()));
-    }
-
-    let registry: AcpRegistry = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse registry: {}", e))?;
+    let registry: AcpRegistry = fetch_registry().await?;
 
     // Find the agent
     let agent = registry
@@ -675,5 +671,16 @@ fn truncate_content(text: &str, max_len: usize) -> String {
         text.to_string()
     } else {
         format!("{}...", &text[..max_len.saturating_sub(3)])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::get_presets;
+
+    #[test]
+    fn static_presets_include_codex_acp_for_codex_alias() {
+        let presets = get_presets();
+        assert!(presets.iter().any(|preset| preset.id == "codex-acp"));
     }
 }
