@@ -476,6 +476,21 @@ impl SpecialistLoader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
+
+    fn find_repo_root() -> PathBuf {
+        let mut current = std::env::current_dir().unwrap();
+
+        loop {
+            if current.join("resources").join("specialists").is_dir() {
+                return current;
+            }
+
+            if !current.pop() {
+                panic!("Failed to locate repository root containing resources/specialists");
+            }
+        }
+    }
 
     #[test]
     fn test_parse_specialist_yaml() {
@@ -658,5 +673,40 @@ markdown prompt
         let developer = loader.get("developer").unwrap();
         assert_eq!(developer.name, "Developer YAML");
         assert!(developer.system_prompt.contains("yaml prompt"));
+    }
+
+    #[test]
+    fn test_repository_specialist_resources_use_taxonomy_locale_overlays() {
+        let repo_root = find_repo_root();
+        let bundled_root = repo_root.join("resources").join("specialists");
+        let english_overlay_root = bundled_root.join("locales").join("en");
+        let chinese_overlay_root = bundled_root.join("locales").join("zh-CN");
+
+        let mut runtime_loader = SpecialistLoader::new();
+        runtime_loader.load_dir(bundled_root.to_str().unwrap()).unwrap();
+        let runtime_ids: HashSet<String> = runtime_loader.all().keys().cloned().collect();
+
+        let mut english_overlay_loader = SpecialistLoader::new();
+        english_overlay_loader
+            .load_dir(english_overlay_root.to_str().unwrap())
+            .unwrap();
+        let english_overlay_ids: HashSet<String> =
+            english_overlay_loader.all().keys().cloned().collect();
+
+        let mut chinese_overlay_loader = SpecialistLoader::new();
+        chinese_overlay_loader
+            .load_dir(chinese_overlay_root.to_str().unwrap())
+            .unwrap();
+        let chinese_overlay_ids: HashSet<String> =
+            chinese_overlay_loader.all().keys().cloned().collect();
+
+        assert!(
+            !bundled_root.join("zh-CN").exists(),
+            "legacy locale directory should not exist at {}",
+            bundled_root.join("zh-CN").display()
+        );
+        assert_eq!(english_overlay_ids, runtime_ids);
+        assert!(!chinese_overlay_ids.is_empty());
+        assert!(chinese_overlay_ids.is_subset(&runtime_ids));
     }
 }
