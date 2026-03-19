@@ -233,6 +233,7 @@ export function WorkspacePageClient({
     <DesktopLayout
       workspaceId={workspaceId}
       workspaces={workspacesHook.workspaces}
+      activeWorkspaceTitle={workspace?.title ?? (isDefaultWorkspace ? "Default Workspace" : undefined)}
       workspacesLoading={workspacesHook.loading}
       onWorkspaceSelect={handleWorkspaceSelect}
       onWorkspaceCreate={handleWorkspaceCreate}

@@ -579,7 +579,28 @@ async fn test_rust_backend_api() {
     let content = body["result"]["content"].as_array().unwrap();
     assert!(!content.is_empty());
     let text = content[0]["text"].as_str().unwrap();
-    assert!(text.contains("delegated") || text.contains("status"));
+    let delegate_result: Value = serde_json::from_str(text).expect("decode delegate tool result");
+    let success = delegate_result["success"].as_bool().unwrap_or(false);
+    if success {
+        let data = delegate_result["data"]
+            .as_object()
+            .expect("delegate success should include data");
+        assert_eq!(data["taskId"], "test-task-1");
+        assert!(data.get("agentId").and_then(Value::as_str).is_some());
+        assert!(data.get("sessionId").and_then(Value::as_str).is_some());
+        assert_eq!(data["waitMode"], "after_all");
+        let specialist = data["specialist"].as_str().unwrap_or_default();
+        assert!(specialist == "crafter" || specialist == "CRAFTER");
+    } else {
+        let error = delegate_result["error"].as_str().unwrap_or_default();
+        assert!(
+            error.contains("Failed to delegate task")
+                || error.contains("Task not found")
+                || error.contains("Failed to spawn agent process"),
+            "unexpected delegate_task_to_agent error: {}",
+            error
+        );
+    }
     println!("  PASS: delegate_task_to_agent tool works");
 
     // ── Test 39: MCP tools/call (report_to_parent) ────────────────────

@@ -6,6 +6,7 @@ import type { WorkspaceData } from "../hooks/use-workspaces";
 interface WorkspaceSwitcherProps {
   workspaces: WorkspaceData[];
   activeWorkspaceId: string | null;
+  activeWorkspaceTitle?: string;
   onSelect: (workspaceId: string) => void;
   onCreate: (title: string) => Promise<void>;
   loading?: boolean;
@@ -17,6 +18,7 @@ interface WorkspaceSwitcherProps {
 export function WorkspaceSwitcher({
   workspaces,
   activeWorkspaceId,
+  activeWorkspaceTitle,
   onSelect,
   onCreate,
   loading,
@@ -30,6 +32,7 @@ export function WorkspaceSwitcher({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const active = workspaces.find((w) => w.id === activeWorkspaceId);
+  const visibleTitle = active?.title ?? activeWorkspaceTitle;
 
   useEffect(() => {
     if (!open) return;
@@ -64,13 +67,13 @@ export function WorkspaceSwitcher({
           type="button"
           onClick={() => setOpen((v) => !v)}
           className="flex items-center gap-1.5 rounded px-2 py-1 text-[11px] text-desktop-text-primary transition-colors hover:bg-desktop-bg-active/70"
-          title={active?.title ?? "Select workspace"}
+          title={visibleTitle ?? "Select workspace"}
         >
           <svg className="w-3 h-3 text-desktop-text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
           </svg>
           <span className="max-w-[120px] truncate">
-            {loading ? "..." : (active?.title ?? "Select")}
+            {loading ? "..." : (visibleTitle ?? "Select")}
           </span>
           <svg className={`w-2.5 h-2.5 text-desktop-text-secondary transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
@@ -153,13 +156,13 @@ export function WorkspaceSwitcher({
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1e2130] hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors max-w-[180px]"
-        title={active?.title ?? "Select workspace"}
+        title={visibleTitle ?? "Select workspace"}
       >
         <svg className="w-3.5 h-3.5 text-indigo-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
         </svg>
         <span className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate flex-1 text-left">
-          {loading ? "..." : (active?.title ?? "Select workspace")}
+          {loading ? "..." : (visibleTitle ?? "Select workspace")}
         </span>
         <svg className={`w-3 h-3 text-gray-400 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />

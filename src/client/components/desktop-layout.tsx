@@ -19,6 +19,7 @@ interface DesktopLayoutProps {
   children: React.ReactNode;
   workspaceId: string;
   workspaces: WorkspaceData[];
+  activeWorkspaceTitle?: string;
   workspacesLoading?: boolean;
   onWorkspaceSelect: (wsId: string) => void;
   onWorkspaceCreate: (title: string) => Promise<void>;
@@ -30,6 +31,7 @@ export function DesktopLayout({
   children,
   workspaceId,
   workspaces,
+  activeWorkspaceTitle,
   workspacesLoading,
   onWorkspaceSelect,
   onWorkspaceCreate,
@@ -59,6 +61,7 @@ export function DesktopLayout({
           <WorkspaceSwitcher
             workspaces={workspaces}
             activeWorkspaceId={workspaceId}
+            activeWorkspaceTitle={activeWorkspaceTitle}
             onSelect={onWorkspaceSelect}
             onCreate={onWorkspaceCreate}
             loading={workspacesLoading}
