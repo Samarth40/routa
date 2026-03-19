@@ -144,6 +144,12 @@ function cleanupIdempotencyCache() {
   }
 }
 
+function requireWorkspaceId(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
 // ─── GET: SSE stream for session/update ────────────────────────────────
 
 export async function GET(request: NextRequest) {
@@ -310,7 +316,7 @@ export async function POST(request: NextRequest) {
         : undefined;
       const baseUrl = (p.baseUrl as string | undefined);
       const apiKey = (p.apiKey as string | undefined);
-      const workspaceId = (p.workspaceId as string) || "default";
+      const workspaceId = requireWorkspaceId(p.workspaceId);
       const idempotencyKey = p.idempotencyKey as string | undefined;
       // Inline custom provider config (command + args passed directly from client)
       const customCommand = (p.customCommand as string | undefined);
@@ -331,6 +337,12 @@ export async function POST(request: NextRequest) {
         return jsonrpcResponse(id ?? null, null, {
           code: -32602,
           message: "customArgs must be an array of strings",
+        });
+      }
+      if (!workspaceId) {
+        return jsonrpcResponse(id ?? null, null, {
+          code: -32602,
+          message: "workspaceId is required",
         });
       }
 

@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { v4 as uuidv4 } from "uuid";
+import { useWorkspaces } from "@/client/hooks/use-workspaces";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -218,7 +219,9 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 // ── Main Page ──────────────────────────────────────────────────────────────
 
 export default function AGUIPage() {
+  const workspacesHook = useWorkspaces();
   const [protocolMode, setProtocolMode] = useState<ProtocolMode>("ag-ui");
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState("");
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
   const [threadId] = useState(() => uuidv4());
@@ -231,6 +234,11 @@ export default function AGUIPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const eventsEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (selectedWorkspaceId || workspacesHook.workspaces.length === 0) return;
+    setSelectedWorkspaceId(workspacesHook.workspaces[0].id);
+  }, [selectedWorkspaceId, workspacesHook.workspaces]);
 
   // Track streaming message state with refs for SSE callback
   const messagesRef = useRef(messages);
@@ -474,6 +482,9 @@ export default function AGUIPage() {
   // ── ACP Protocol send (for comparison) ──
   const sendViaACP = useCallback(
     async (text: string) => {
+      if (!selectedWorkspaceId) {
+        throw new Error("Select a workspace before using ACP mode");
+      }
       // Use existing ACP endpoint in JSON-RPC format
       const controller = new AbortController();
       abortControllerRef.current = controller;
@@ -499,7 +510,7 @@ export default function AGUIPage() {
           jsonrpc: "2.0",
           id: 2,
           method: "session/new",
-          params: { role: "CRAFTER" },
+          params: { role: "CRAFTER", workspaceId: selectedWorkspaceId },
         }),
         signal: controller.signal,
       });
@@ -631,7 +642,7 @@ export default function AGUIPage() {
         }
       }
     },
-    [],
+    [selectedWorkspaceId],
   );
 
   // ── Send handler ──
@@ -709,6 +720,22 @@ export default function AGUIPage() {
 
           <div className="flex items-center gap-3">
             <ProtocolToggle mode={protocolMode} onChange={setProtocolMode} />
+
+            <select
+              value={selectedWorkspaceId}
+              onChange={(e) => setSelectedWorkspaceId(e.target.value)}
+              className="rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2.5 py-1 text-xs text-zinc-600 dark:text-zinc-300"
+            >
+              {workspacesHook.workspaces.length === 0 ? (
+                <option value="">No workspace</option>
+              ) : (
+                workspacesHook.workspaces.map((workspace) => (
+                  <option key={workspace.id} value={workspace.id}>
+                    {workspace.title}
+                  </option>
+                ))
+              )}
+            </select>
 
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-gray-50 dark:bg-[#1e2130] text-[11px] font-medium text-gray-500 dark:text-gray-400">
               <span className={`w-1.5 h-1.5 rounded-full ${sending ? "bg-amber-400 animate-pulse" : "bg-green-500"}`} />
