@@ -42,13 +42,14 @@ describe("KanbanSettingsModal", () => {
         columnAutomation={{}}
         availableProviders={[{ id: "claude", name: "Claude Code", description: "Claude Code provider", command: "claude" }]}
         specialists={[{ id: "verify", name: "Verifier", role: "GATE" }]}
+        specialistLanguage="en"
         onClose={vi.fn()}
         onSave={onSave}
       />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: /review/i }));
-    fireEvent.click(screen.getByRole("switch", { name: /automation/i }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /toggle automation for review/i }));
     fireEvent.change(screen.getAllByLabelText("Provider")[0], { target: { value: "claude" } });
     fireEvent.change(screen.getAllByLabelText("Specialist")[0], { target: { value: "verify" } });
     fireEvent.click(screen.getByRole("button", { name: /save board settings/i }));
@@ -92,13 +93,14 @@ describe("KanbanSettingsModal", () => {
         columnAutomation={{}}
         availableProviders={[{ id: "claude", name: "Claude Code", description: "Claude Code provider", command: "claude" }]}
         specialists={[{ id: "verify", name: "Verifier", role: "GATE" }]}
+        specialistLanguage="en"
         onClose={vi.fn()}
         onSave={vi.fn(async () => {})}
       />,
     );
 
     expect(screen.queryByLabelText("Dev supervision mode")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /show runtime settings/i }));
+    fireEvent.click(screen.getByRole("button", { name: /runtime/i }));
     expect(screen.getByLabelText("Dev supervision mode")).not.toBeNull();
   });
 });

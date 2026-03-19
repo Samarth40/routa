@@ -16,6 +16,13 @@ function git(cwd: string, ...args: string[]): string {
   }).trim();
 }
 
+function gitNoGpgCommit(cwd: string, ...args: string[]): string {
+  if (args[0] === "commit") {
+    return git(cwd, "-c", "commit.gpgSign=false", ...args);
+  }
+  return git(cwd, ...args);
+}
+
 describe("buildReviewAnalysisPayload", () => {
   afterEach(() => {
     for (const dir of tempDirs.splice(0)) {
@@ -37,11 +44,11 @@ describe("buildReviewAnalysisPayload", () => {
     fs.writeFileSync(path.join(repoDir, "example.ts"), "export const value = 1;\n");
 
     git(repoDir, "add", ".");
-    git(repoDir, "commit", "-m", "initial");
+    gitNoGpgCommit(repoDir, "commit", "-m", "initial");
 
     fs.writeFileSync(path.join(repoDir, "example.ts"), "export const value = 2;\n");
     git(repoDir, "add", "example.ts");
-    git(repoDir, "commit", "-m", "update");
+    gitNoGpgCommit(repoDir, "commit", "-m", "update");
 
     const payload = buildReviewAnalysisPayload({
       repoPath: repoDir,
