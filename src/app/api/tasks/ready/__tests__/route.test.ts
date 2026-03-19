@@ -27,7 +27,7 @@ describe("/api/tasks/ready GET", () => {
         workspaceId: "workspace-1",
         boardId: "board-1",
         columnId: "todo",
-        status: TaskStatus.TODO,
+        status: TaskStatus.PENDING,
       }),
     ]);
   });
