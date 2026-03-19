@@ -12,8 +12,17 @@ import { NextRequest, NextResponse } from "next/server";
 // In-memory store for custom surfaces per workspace (in production, persist to DB)
 const customSurfaceStore = new Map<string, unknown[]>();
 
+function requireWorkspaceId(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
 export async function GET(req: NextRequest) {
-  const workspaceId = req.nextUrl.searchParams.get("workspaceId") || "default";
+  const workspaceId = requireWorkspaceId(req.nextUrl.searchParams.get("workspaceId"));
+  if (!workspaceId) {
+    return NextResponse.json({ error: "workspaceId is required" }, { status: 400 });
+  }
 
   try {
     // Fetch workspace data from existing APIs
@@ -77,7 +86,10 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const workspaceId = body.workspaceId || "default";
+    const workspaceId = requireWorkspaceId(body.workspaceId);
+    if (!workspaceId) {
+      return NextResponse.json({ error: "workspaceId is required" }, { status: 400 });
+    }
     const messages = Array.isArray(body.messages) ? body.messages : Array.isArray(body.data) ? body.data : [body];
 
     // Validate A2UI messages
