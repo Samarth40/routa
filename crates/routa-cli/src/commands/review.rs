@@ -80,6 +80,7 @@ struct SecurityReviewPayload {
     security_guidance: Option<String>,
     tool_trace: Vec<ToolTrace>,
     heuristic_candidates: Vec<SecurityCandidate>,
+    semgrep_candidates: Vec<SecurityCandidate>,
     fitness_review_context: Option<Value>,
 }
 
@@ -428,7 +429,13 @@ fn build_security_review_payload(
     let security_guidance = load_security_guidance(repo_root);
 
     let mut tool_trace = Vec::new();
+    note_ast_grep_availability(&mut tool_trace);
     let heuristic_candidates = collect_security_candidates(
+        repo_root,
+        &review_payload.changed_files,
+        &mut tool_trace,
+    );
+    let semgrep_candidates = collect_semgrep_candidates(
         repo_root,
         &review_payload.changed_files,
         &mut tool_trace,
@@ -449,8 +456,25 @@ fn build_security_review_payload(
         security_guidance,
         tool_trace,
         heuristic_candidates,
+        semgrep_candidates,
         fitness_review_context,
     })
+}
+
+fn note_ast_grep_availability(tool_trace: &mut Vec<ToolTrace>) {
+    let ast_grep = find_command_in_path("ast-grep").or_else(|| find_command_in_path("sg"));
+    match ast_grep {
+        Some(path) => tool_trace.push(ToolTrace {
+            tool: "ast-grep".to_string(),
+            status: "available".to_string(),
+            details: format!("available at {}", path.display()),
+        }),
+        None => tool_trace.push(ToolTrace {
+            tool: "ast-grep".to_string(),
+            status: "unavailable".to_string(),
+            details: "ast-grep/sg not installed".to_string(),
+        }),
+    }
 }
 
 fn load_security_guidance(repo_root: &Path) -> Option<String> {
@@ -468,11 +492,17 @@ fn collect_security_candidates(
     changed_files: &[String],
     tool_trace: &mut Vec<ToolTrace>,
 ) -> Vec<SecurityCandidate> {
-    if changed_files.is_empty() {
+    let scoped_files: Vec<String> = changed_files
+        .iter()
+        .filter(|path| !is_security_review_tooling_file(path))
+        .cloned()
+        .collect();
+
+    if scoped_files.is_empty() {
         tool_trace.push(ToolTrace {
             tool: "heuristic-scanner".to_string(),
             status: "skipped".to_string(),
-            details: "No changed files in diff range".to_string(),
+            details: "Changed files only touch security review tooling".to_string(),
         });
         return Vec::new();
     }
@@ -481,7 +511,7 @@ fn collect_security_candidates(
 
     maybe_push_candidate(
         repo_root,
-        changed_files,
+        &scoped_files,
         "exec\\s*\\(|child_process\\.exec|execSync\\s*\\(",
         SecurityCandidate {
             rule_id: "command-execution".to_string(),
@@ -497,7 +527,7 @@ fn collect_security_candidates(
 
     maybe_push_candidate(
         repo_root,
-        changed_files,
+        &scoped_files,
         "dangerouslySetInnerHTML|marked\\.parse\\(",
         SecurityCandidate {
             rule_id: "html-rendering".to_string(),
@@ -513,7 +543,7 @@ fn collect_security_candidates(
 
     maybe_push_candidate(
         repo_root,
-        changed_files,
+        &scoped_files,
         "\\bfetch\\s*\\(",
         SecurityCandidate {
             rule_id: "outbound-fetch".to_string(),
@@ -529,7 +559,7 @@ fn collect_security_candidates(
 
     maybe_push_candidate_filtered(
         repo_root,
-        changed_files,
+        &scoped_files,
         "baseUrl|ANTHROPIC_BASE_URL",
         SecurityCandidate {
             rule_id: "base-url-override".to_string(),
@@ -552,7 +582,7 @@ fn collect_security_candidates(
 
     maybe_push_candidate(
         repo_root,
-        changed_files,
+        &scoped_files,
         "bypassPermissions|dangerously-skip-permissions|allow-all-tools|no-ask-user",
         SecurityCandidate {
             rule_id: "permission-bypass".to_string(),
@@ -568,7 +598,7 @@ fn collect_security_candidates(
 
     maybe_push_candidate(
         repo_root,
-        changed_files,
+        &scoped_files,
         "docker run|docker pull|0\\.0\\.0\\.0|-p\\s+\\d|/var/run/docker\\.sock|~/.ssh",
         SecurityCandidate {
             rule_id: "docker-exposure".to_string(),
@@ -582,7 +612,7 @@ fn collect_security_candidates(
         &mut candidates,
     );
 
-    let auth_candidates = heuristic_auth_candidates(repo_root, changed_files);
+    let auth_candidates = heuristic_auth_candidates(repo_root, &scoped_files);
     if auth_candidates.is_empty() {
         tool_trace.push(ToolTrace {
             tool: "heuristic-auth-check".to_string(),
@@ -599,6 +629,191 @@ fn collect_security_candidates(
     }
 
     candidates
+}
+
+fn collect_semgrep_candidates(
+    repo_root: &Path,
+    changed_files: &[String],
+    tool_trace: &mut Vec<ToolTrace>,
+) -> Vec<SecurityCandidate> {
+    let scoped_files: Vec<String> = changed_files
+        .iter()
+        .filter(|path| !is_security_review_tooling_file(path))
+        .cloned()
+        .collect();
+
+    if scoped_files.is_empty() {
+        tool_trace.push(ToolTrace {
+            tool: "semgrep".to_string(),
+            status: "skipped".to_string(),
+            details: "Changed files only touch security review tooling".to_string(),
+        });
+        return Vec::new();
+    }
+
+    if find_command_in_path("semgrep").is_none() {
+        tool_trace.push(ToolTrace {
+            tool: "semgrep".to_string(),
+            status: "unavailable".to_string(),
+            details: "semgrep not installed".to_string(),
+        });
+        return Vec::new();
+    }
+
+    let mut args = vec![
+        "--config".to_string(),
+        "p/security-audit".to_string(),
+        "--config".to_string(),
+        "p/owasp-top-ten".to_string(),
+        "--json".to_string(),
+        "--quiet".to_string(),
+    ];
+    args.extend(scoped_files.iter().cloned());
+
+    let output = Command::new("semgrep")
+        .args(&args)
+        .current_dir(repo_root)
+        .output();
+
+    let Ok(output) = output else {
+        tool_trace.push(ToolTrace {
+            tool: "semgrep".to_string(),
+            status: "error".to_string(),
+            details: "failed to execute semgrep".to_string(),
+        });
+        return Vec::new();
+    };
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        tool_trace.push(ToolTrace {
+            tool: "semgrep".to_string(),
+            status: "error".to_string(),
+            details: if !stderr.is_empty() {
+                truncate(&stderr, 1_500)
+            } else if !stdout.is_empty() {
+                truncate(&stdout, 1_500)
+            } else {
+                "semgrep failed without stderr/stdout output".to_string()
+            },
+        });
+        return Vec::new();
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let Ok(value) = serde_json::from_str::<Value>(&stdout) else {
+        tool_trace.push(ToolTrace {
+            tool: "semgrep".to_string(),
+            status: "error".to_string(),
+            details: "failed to parse semgrep JSON output".to_string(),
+        });
+        return Vec::new();
+    };
+
+    let Some(results) = value.get("results").and_then(|v| v.as_array()) else {
+        tool_trace.push(ToolTrace {
+            tool: "semgrep".to_string(),
+            status: "ok".to_string(),
+            details: "semgrep returned no results".to_string(),
+        });
+        return Vec::new();
+    };
+
+    let mut candidates = Vec::new();
+    for result in results {
+        let path = result
+            .get("path")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
+        let line = result
+            .get("start")
+            .and_then(|v| v.get("line"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or_default();
+        let check_id = result
+            .get("check_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("semgrep.unknown")
+            .to_string();
+        let severity = result
+            .get("extra")
+            .and_then(|v| v.get("severity"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("WARNING")
+            .to_string();
+        let message = result
+            .get("extra")
+            .and_then(|v| v.get("message"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("Semgrep finding")
+            .to_string();
+        let lines = result
+            .get("extra")
+            .and_then(|v| v.get("lines"))
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
+        let category = infer_semgrep_category(&check_id, &message);
+
+        candidates.push(SecurityCandidate {
+            rule_id: check_id,
+            category,
+            severity,
+            summary: message,
+            locations: vec![if line > 0 {
+                format!("{}:{}", path, line)
+            } else {
+                path
+            }],
+            evidence: if lines.is_empty() {
+                Vec::new()
+            } else {
+                vec![truncate(&lines, 500)]
+            },
+        });
+    }
+
+    tool_trace.push(ToolTrace {
+        tool: "semgrep".to_string(),
+        status: "ok".to_string(),
+        details: format!("Collected {} semgrep candidate(s)", candidates.len()),
+    });
+
+    candidates
+}
+
+fn find_command_in_path(command: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path) {
+        let candidate = dir.join(command);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+fn infer_semgrep_category(check_id: &str, message: &str) -> String {
+    let combined = format!("{} {}", check_id.to_lowercase(), message.to_lowercase());
+    if combined.contains("xss") || combined.contains("innerhtml") {
+        "xss".to_string()
+    } else if combined.contains("ssrf") || combined.contains("fetch") || combined.contains("url") {
+        "ssrf".to_string()
+    } else if combined.contains("exec")
+        || combined.contains("shell")
+        || combined.contains("command")
+        || combined.contains("child-process")
+    {
+        "command-injection".to_string()
+    } else if combined.contains("auth") || combined.contains("permission") {
+        "authentication".to_string()
+    } else if combined.contains("docker") || combined.contains("container") {
+        "container-exposure".to_string()
+    } else {
+        "security".to_string()
+    }
 }
 
 fn maybe_push_candidate(
@@ -788,14 +1003,20 @@ fn collect_fitness_review_context(
     base: &str,
     tool_trace: &mut Vec<ToolTrace>,
 ) -> Option<Value> {
-    if changed_files.is_empty() {
+    let scoped_files: Vec<String> = changed_files
+        .iter()
+        .filter(|path| !is_security_review_tooling_file(path))
+        .cloned()
+        .collect();
+
+    if scoped_files.is_empty() {
         return None;
     }
 
     let output = Command::new("routa-fitness")
         .arg("graph")
         .arg("review-context")
-        .args(changed_files)
+        .args(&scoped_files)
         .arg("--base")
         .arg(base)
         .arg("--json")
@@ -847,6 +1068,15 @@ fn collect_fitness_review_context(
             None
         }
     }
+}
+
+fn is_security_review_tooling_file(path: &str) -> bool {
+    matches!(
+        path,
+        "crates/routa-cli/src/commands/review.rs"
+            | "crates/routa-cli/src/main.rs"
+            | "resources/specialists/review/security-reviewer.yaml"
+    )
 }
 
 fn resolve_repo_root(repo_path: Option<&str>) -> Result<PathBuf, String> {
