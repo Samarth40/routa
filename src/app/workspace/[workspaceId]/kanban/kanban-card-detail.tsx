@@ -50,6 +50,13 @@ function getProviderName(providerId: string | undefined, availableProviders: Acp
   return availableProviders.find((provider) => provider.id === providerId)?.name ?? providerId;
 }
 
+function getPromptFailureMessage(task: TaskInfo, sessionInfo: SessionInfo | null | undefined): string | null {
+  if (sessionInfo?.acpStatus === "error" && sessionInfo.acpError) {
+    return sessionInfo.acpError;
+  }
+  return task.lastSyncError ?? null;
+}
+
 function formatAutomationStepSummary(
   step: KanbanAutomationStep,
   availableProviders: AcpProviderInfo[],
@@ -226,6 +233,7 @@ export function KanbanCardDetail({
             lane={currentLane}
             boardColumns={boardColumns ?? []}
             availableProviders={availableProviders}
+            sessionInfo={sessionInfo}
             specialists={specialists}
             specialistLanguage={specialistLanguage}
             onPatchTask={onPatchTask}
@@ -365,6 +373,7 @@ function ExecutionSection({
   lane,
   boardColumns,
   availableProviders,
+  sessionInfo,
   specialists,
   specialistLanguage,
   onPatchTask,
@@ -376,6 +385,7 @@ function ExecutionSection({
   lane?: KanbanColumnInfo;
   boardColumns: KanbanColumnInfo[];
   availableProviders: AcpProviderInfo[];
+  sessionInfo?: SessionInfo | null;
   specialists: SpecialistOption[];
   specialistLanguage: KanbanSpecialistLanguage;
   onPatchTask: (taskId: string, payload: Record<string, unknown>) => Promise<TaskInfo>;
@@ -395,6 +405,11 @@ function ExecutionSection({
     effectiveAutomation.specialistId,
     effectiveAutomation.specialistName,
     specialists,
+  );
+  const failureMessage = getPromptFailureMessage(task, sessionInfo);
+  const failedProviderName = getProviderName(
+    sessionInfo?.provider ?? task.assignedProvider ?? effectiveAutomation.providerId,
+    availableProviders,
   );
   const lanePipeline = laneSteps.length > 0
     ? laneSteps.map((step) => formatAutomationStepSummary(step, availableProviders, specialists)).join(" -> ")
@@ -545,6 +560,12 @@ function ExecutionSection({
           Manual {task.triggerSessionId ? "reruns" : "runs"} use {effectiveAutomation.source === "card" ? "this card override" : "the current lane default"}:
           {" "}
           {effectiveProvider} · {effectiveAutomation.role ?? "DEVELOPER"} · {effectiveSpecialist}
+        </div>
+      )}
+      {failureMessage && (
+        <div className={`mt-2 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800 dark:border-rose-900/40 dark:bg-rose-900/10 dark:text-rose-200 ${compact ? "leading-[1.125rem]" : "leading-[1.2rem]"}`}>
+          Current run failed on {failedProviderName}: {failureMessage}
+          {" "}Reset the override or switch providers before rerunning if this looks like a provider authorization or runtime issue.
         </div>
       )}
       {transitionArtifacts.nextRequiredArtifacts.length > 0 && (

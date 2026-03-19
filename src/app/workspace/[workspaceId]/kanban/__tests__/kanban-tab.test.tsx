@@ -852,6 +852,52 @@ describe("KanbanCardDetail repository health", () => {
     });
     expect(onRefresh).toHaveBeenCalled();
   });
+
+  it("surfaces provider runtime failures in the execution panel", () => {
+    render(
+      <KanbanCardDetail
+        task={{
+          ...createTask("task-err", "Story Failure"),
+          assignedProvider: "auggie",
+          assignedRole: "DEVELOPER",
+          triggerSessionId: "session-err",
+          lastSyncError: "Permission denied: HTTP error: 403 Forbidden",
+        }}
+        boardColumns={board.columns}
+        availableProviders={[{
+          id: "auggie",
+          name: "Auggie",
+          description: "Auggie provider",
+          command: "auggie",
+          status: "available",
+        }]}
+        specialists={[]}
+        specialistLanguage="en"
+        codebases={[]}
+        allCodebaseIds={[]}
+        worktreeCache={{}}
+        sessionInfo={{
+          sessionId: "session-err",
+          workspaceId: "workspace-1",
+          cwd: "/tmp/project",
+          provider: "auggie",
+          role: "DEVELOPER",
+          acpStatus: "error",
+          acpError: "Permission denied: HTTP error: 403 Forbidden",
+          createdAt: "2025-01-01T00:00:00.000Z",
+        }}
+        sessions={[]}
+        fullWidth
+        onPatchTask={vi.fn(async () => createTask("task-err", "Story Failure"))}
+        onRetryTrigger={vi.fn()}
+        onDelete={vi.fn()}
+        onRefresh={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText(/Current run failed on Auggie:/i)).toBeTruthy();
+    expect(screen.getByText(/403 Forbidden/i)).toBeTruthy();
+  });
 });
 
 describe("KanbanTab live session tail", () => {
