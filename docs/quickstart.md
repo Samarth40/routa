@@ -72,3 +72,7 @@ routa -p "Build user auth system"
 - If a provider command is missing, install provider CLI first (`opencode`, `claude`, etc.).
 - If Tauri dependencies are missing, install desktop dependencies with `npm --prefix apps/desktop install`.
 - If static build fails, check Node version and run from repo root.
+
+## 9) Demo
+
+- Video walkthrough: https://www.bilibili.com/video/BV16CwyzUED5/
