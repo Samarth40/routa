@@ -4,13 +4,35 @@ build-backend = "hatchling.build"
 
 [project]
 name = "routa-fitness"
-version = "0.1.0"
-description = "Evolutionary architecture fitness engine for Routa"
+version = "0.1.1"
+description = "Architecture fitness engine with tiered checks, change-aware execution, and review triggers"
+readme = "README.md"
+license = { text = "MIT" }
 requires-python = ">=3.10"
+authors = [
+    { name = "Phodal" },
+]
+keywords = ["fitness-functions", "architecture", "quality-gates", "code-review", "ci"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
+]
 dependencies = [
     "pyyaml>=6.0,<7",
     "tree-sitter-language-pack>=0.13,<1",
 ]
+
+[project.urls]
+Homepage = "https://github.com/phodal/routa"
+Repository = "https://github.com/phodal/routa"
+Issues = "https://github.com/phodal/routa/issues"
 
 [project.optional-dependencies]
 graph = [
