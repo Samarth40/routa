@@ -38,25 +38,24 @@ describe("ci-red-fixer helpers", () => {
 
   it("maps failed Defense jobs to validation commands", () => {
     const failedJobs = pickFailedJobs([
-      normalizeJobSummary({ id: 1, name: "Gate: Lint", conclusion: "failure" }),
+      normalizeJobSummary({ id: 1, name: "Gate: Fitness", conclusion: "failure" }),
       normalizeJobSummary({ id: 2, name: "Security: Dependency Scan", conclusion: "failure" }),
       normalizeJobSummary({ id: 3, name: "Fitness Report", conclusion: "success" }),
     ]);
 
     expect(failedJobs.map((job) => job.name)).toEqual([
-      "Gate: Lint",
+      "Gate: Fitness",
       "Security: Dependency Scan",
     ]);
 
     expect(collectValidationCommands(failedJobs.map((job) => job.name))).toEqual([
-      "npm run lint",
-      "cargo clippy --workspace -- -D warnings",
+      "routa-fitness run --tier normal --scope ci --min-score 0 --output .artifacts/fitness-report.json",
       "npm audit --audit-level=critical",
     ]);
   });
 
   it("flags unmapped jobs to keep automation conservative", () => {
-    expect(findUnmappedJobs(["Gate: Lint", "Some New Gate"])).toEqual([
+    expect(findUnmappedJobs(["Gate: Fitness", "Some New Gate"])).toEqual([
       "Some New Gate",
     ]);
   });
@@ -83,11 +82,11 @@ describe("ci-red-fixer helpers", () => {
         {
           job: normalizeJobSummary({
             id: 301,
-            name: "Gate: Lint",
+            name: "Gate: Fitness",
             conclusion: "failure",
             html_url: "https://example.test/job/301",
           }),
-          validationCommands: ["npm run lint"],
+          validationCommands: ["routa-fitness run --tier normal --scope ci --min-score 0 --output .artifacts/fitness-report.json"],
           logExcerpt: "ESLint found 1 error",
         },
       ],
@@ -95,8 +94,8 @@ describe("ci-red-fixer helpers", () => {
 
     expect(prompt).toContain('workflow "Defense"');
     expect(prompt).toContain("Run ID: 201");
-    expect(prompt).toContain("Failed Job: Gate: Lint");
-    expect(prompt).toContain("`npm run lint`");
+    expect(prompt).toContain("Failed Job: Gate: Fitness");
+    expect(prompt).toContain("`routa-fitness run --tier normal --scope ci --min-score 0 --output .artifacts/fitness-report.json`");
     expect(prompt).toContain("ESLint found 1 error");
   });
 });

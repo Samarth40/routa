@@ -168,6 +168,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         parallel=args.parallel,
         dry_run=args.dry_run,
         verbose=args.verbose,
+        min_score=args.min_score,
         execution_scope=execution_scope,
     )
 
@@ -436,6 +437,12 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--parallel", action="store_true", help="Run metrics in parallel")
     run_parser.add_argument("--dry-run", action="store_true", help="Show what would run")
     run_parser.add_argument("--verbose", action="store_true", help="Show output on failure")
+    run_parser.add_argument(
+        "--min-score",
+        type=float,
+        default=80.0,
+        help="Minimum weighted score before the run exits non-zero",
+    )
     run_parser.add_argument(
         "--scope",
         choices=["local", "ci", "staging", "prod_observation"],

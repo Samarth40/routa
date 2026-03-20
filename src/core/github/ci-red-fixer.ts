@@ -34,15 +34,8 @@ export interface RepairPromptInput {
 }
 
 const DEFENSE_JOB_COMMANDS: Record<string, string[]> = {
-  "Gate: Lint": [
-    "npm run lint",
-    "cargo clippy --workspace -- -D warnings",
-  ],
-  "Gate: TS Tests": ["npm run test:run"],
-  "Gate: Rust Tests": ["cargo test --workspace"],
-  "Gate: API Contract": [
-    "npm run api:schema:validate",
-    "npm run api:check",
+  "Gate: Fitness": [
+    "routa-fitness run --tier normal --scope ci --min-score 0 --output .artifacts/fitness-report.json",
   ],
   "Security: Dependency Scan": [
     "npm audit --audit-level=critical",

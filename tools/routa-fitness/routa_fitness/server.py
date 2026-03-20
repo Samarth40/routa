@@ -28,6 +28,7 @@ def create_server(project_root: Path | None = None):
         scope: str | None = None,
         parallel: bool = False,
         dry_run: bool = False,
+        min_score: float = 80.0,
     ) -> dict:
         """Run fitness checks and return a structured report.
 
@@ -36,6 +37,7 @@ def create_server(project_root: Path | None = None):
             scope: Filter by execution scope (local, ci, staging, prod_observation).
             parallel: Run metrics in parallel.
             dry_run: Show what would run without executing.
+            min_score: Minimum weighted score before the result is considered blocked.
         """
         from routa_fitness.engine import run_fitness_report
         from routa_fitness.governance import GovernancePolicy
@@ -49,6 +51,7 @@ def create_server(project_root: Path | None = None):
             tier_filter=tier_filter,
             parallel=parallel,
             dry_run=dry_run,
+            min_score=min_score,
             execution_scope=execution_scope,
         )
 
