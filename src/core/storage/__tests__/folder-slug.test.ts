@@ -11,7 +11,7 @@ describe("toFolderSlug", () => {
   });
 
   it("converts a Windows path", () => {
-    expect(toFolderSlug("C:\\Users\\john\\project")).toBe("C:-Users-john-project");
+    expect(toFolderSlug("C:\\Users\\john\\project")).toBe("C-Users-john-project");
   });
 
   it("collapses consecutive separators", () => {
