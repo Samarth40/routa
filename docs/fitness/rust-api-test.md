@@ -57,6 +57,8 @@ metrics:
 | task | `GET /api/tasks/{id}` | get | 创建/更新后的持久可读性 | VERIFIED | `crates/routa-server/tests/rust_api_end_to_end.rs::api_task_flow_with_validation` |
 | task | `PATCH/DELETE /api/tasks/{id}` | update/delete | PATCH 与 DELETE 行为一致 | VERIFIED | `crates/routa-server/tests/rust_api_end_to_end.rs::api_task_flow_with_validation` |
 | task | `POST /api/tasks` | create | 创建成功与字段校验 | VERIFIED | `crates/routa-server/tests/rust_api_end_to_end.rs::api_task_flow_with_validation` |
+| kanban | `POST /api/kanban/import` | import | YAML 导入成功并返回 applied 明细 | VERIFIED | `crates/routa-server/tests/rust_api_task_artifacts.rs::api_kanban_import_export_roundtrip` |
+| kanban | `GET /api/kanban/export` | export + validation | YAML 导出成功；缺失 `workspaceId` 返回 400 | VERIFIED | `crates/routa-server/tests/rust_api_task_artifacts.rs::api_kanban_import_export_roundtrip` |
 | codebase | `POST /api/workspaces/{workspaceId}/codebases` | create + duplicate handling | 冲突返回语义一致性 | VERIFIED | `crates/routa-server/tests/rust_api_end_to_end.rs::api_codebase_and_file_search_flow` |
 | codebase | `GET /api/files/search` | search path | 空路径/非法路径/结果可见性 | VERIFIED | `crates/routa-server/tests/rust_api_end_to_end.rs::api_codebase_and_file_search_flow` |
 | codebase | `PATCH /api/codebases/{id}` | update | 更新字段成功 | VERIFIED | `crates/routa-server/tests/rust_api_end_to_end.rs::api_codebase_and_file_search_flow` |

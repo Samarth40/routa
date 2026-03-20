@@ -190,3 +190,79 @@ async fn api_task_artifact_flow_and_gate() {
         .expect("move allowed");
     assert_eq!(allowed_move.status(), StatusCode::OK);
 }
+
+#[tokio::test]
+async fn api_kanban_import_export_roundtrip() {
+    let fixture = ApiFixture::new().await;
+
+    let import_response = fixture
+        .client
+        .post(fixture.endpoint("/api/kanban/import"))
+        .json(&json!({
+            "workspaceId": "kanban-sync",
+            "yamlContent": r#"
+version: 1
+name: Sync Workspace
+workspaceId: ignored-by-override
+boards:
+  - id: main
+    name: Imported Board
+    isDefault: true
+    columns:
+      - id: backlog
+        name: Backlog
+        stage: backlog
+      - id: review
+        name: Review
+        stage: review
+        automation:
+          providerId: routa-native
+          role: GATE
+"#
+        }))
+        .send()
+        .await
+        .expect("import kanban yaml");
+    assert_eq!(import_response.status(), StatusCode::OK);
+
+    let export_response = fixture
+        .client
+        .get(fixture.endpoint("/api/kanban/export?workspaceId=kanban-sync"))
+        .send()
+        .await
+        .expect("export kanban yaml");
+    assert_eq!(export_response.status(), StatusCode::OK);
+    assert!(
+        export_response
+            .headers()
+            .get("content-type")
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.contains("application/yaml"))
+    );
+    assert!(
+        export_response
+            .headers()
+            .get("content-disposition")
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.contains("kanban-kanban-sync.yaml"))
+    );
+
+    let exported_yaml = export_response.text().await.expect("export yaml body");
+    assert!(exported_yaml.contains("workspaceId: kanban-sync"));
+    assert!(exported_yaml.contains("name: Sync Workspace Kanban"));
+    assert!(exported_yaml.contains("name: Imported Board"));
+    assert!(exported_yaml.contains("enabled: true"));
+
+    let missing_workspace = fixture
+        .client
+        .get(fixture.endpoint("/api/kanban/export"))
+        .send()
+        .await
+        .expect("export without workspaceId");
+    assert_eq!(missing_workspace.status(), StatusCode::BAD_REQUEST);
+    let missing_workspace_json: Value = missing_workspace
+        .json()
+        .await
+        .expect("decode missing workspace response");
+    assert!(json_has_error(&missing_workspace_json, "workspaceId is required"));
+}

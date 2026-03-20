@@ -2001,6 +2001,83 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /api/kanban/export:
+    get:
+      operationId: exportKanbanConfig
+      summary: Export kanban boards as YAML
+      parameters:
+        - name: workspaceId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: YAML export of the workspace kanban configuration
+          content:
+            application/yaml:
+              schema:
+                type: string
+        "400":
+          description: Missing workspace id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/kanban/import:
+    post:
+      operationId: importKanbanConfig
+      summary: Import kanban boards from YAML
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [yamlContent]
+              properties:
+                yamlContent:
+                  type: string
+                workspaceId:
+                  type: string
+      responses:
+        "200":
+          description: Kanban import applied
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [workspaceId, importedBoards, applied]
+                properties:
+                  workspaceId:
+                    type: string
+                  importedBoards:
+                    type: integer
+                  applied:
+                    type: array
+                    items:
+                      type: object
+                      required: [boardId, requestedBoardId, boardName, action, columns]
+                      properties:
+                        boardId:
+                          type: string
+                        requestedBoardId:
+                          type: string
+                        boardName:
+                          type: string
+                        action:
+                          type: string
+                          enum: [created, updated]
+                        columns:
+                          type: integer
+        "400":
+          description: Invalid YAML or request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /api/shared-sessions/{sharedSessionId}:
     get:
       operationId: getSharedSession

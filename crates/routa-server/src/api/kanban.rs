@@ -1,12 +1,13 @@
 use axum::{
     extract::{Path, Query, State},
+    http::HeaderMap,
     response::sse::{Event, KeepAlive, Sse},
     routing::{get, post},
     Json, Router,
 };
 use routa_core::events::{AgentEvent, AgentEventType, EventBus};
 use routa_core::models::kanban::KanbanColumn;
-use routa_core::models::kanban_config::KanbanConfig;
+use routa_core::models::kanban_config::{KanbanBoardConfig, KanbanColumnConfig, KanbanConfig};
 use routa_core::models::workspace::Workspace;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
@@ -69,6 +70,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/boards", get(list_boards).post(create_board))
         .route("/boards/{boardId}", get(get_board).patch(update_board))
+        .route("/export", get(export_config))
         .route("/import", post(import_config))
         .route("/events", get(kanban_events))
         .route("/decompose", post(decompose_tasks))
@@ -374,6 +376,95 @@ struct DecomposeRequest {
 struct ImportConfigRequest {
     yaml_content: String,
     workspace_id: Option<String>,
+}
+
+fn build_export_filename(workspace_id: &str) -> String {
+    let safe_id = workspace_id
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+    format!(
+        "kanban-{}.yaml",
+        if safe_id.is_empty() { "default" } else { &safe_id }
+    )
+}
+
+async fn export_config(
+    State(state): State<AppState>,
+    Query(query): Query<BoardsQuery>,
+) -> Result<(HeaderMap, String), ServerError> {
+    let workspace_id = query
+        .workspace_id
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| ServerError::BadRequest("workspaceId is required".to_string()))?;
+
+    state.kanban_store.ensure_default_board(&workspace_id).await?;
+
+    let workspace = state.workspace_store.get(&workspace_id).await?;
+    let boards = state.kanban_store.list_by_workspace(&workspace_id).await?;
+    let config = KanbanConfig {
+        version: 1,
+        name: workspace.and_then(|workspace| {
+            let title = workspace.title.trim();
+            if title.is_empty() {
+                None
+            } else {
+                Some(format!("{title} Kanban"))
+            }
+        }),
+        workspace_id: workspace_id.clone(),
+        boards: boards
+            .into_iter()
+            .map(|board| {
+                let mut columns = board.columns;
+                columns.sort_by_key(|column| column.position);
+                KanbanBoardConfig {
+                    id: board.id,
+                    name: board.name,
+                    is_default: board.is_default,
+                    columns: columns
+                        .into_iter()
+                        .map(|mut column| {
+                            normalize_column_automation(&mut column);
+                            KanbanColumnConfig {
+                                id: column.id,
+                                name: column.name,
+                                color: column.color,
+                                stage: column.stage,
+                                automation: column.automation,
+                            }
+                        })
+                        .collect(),
+                }
+            })
+            .collect(),
+    };
+
+    let yaml_content = config.to_yaml().map_err(ServerError::Internal)?;
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        "content-type",
+        "application/yaml; charset=utf-8".parse().unwrap(),
+    );
+    headers.insert("cache-control", "no-store".parse().unwrap());
+    headers.insert(
+        "content-disposition",
+        format!(
+            "attachment; filename=\"{}\"",
+            build_export_filename(&workspace_id)
+        )
+        .parse()
+        .unwrap(),
+    );
+
+    Ok((headers, yaml_content))
 }
 
 async fn decompose_tasks(
