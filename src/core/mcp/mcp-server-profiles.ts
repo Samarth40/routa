@@ -1,4 +1,4 @@
-export type McpServerProfile = "coordination" | "kanban-planning";
+export type McpServerProfile = "coordination" | "kanban-planning" | "team-coordination";
 
 const KANBAN_PLANNING_TOOL_NAMES = [
   "create_card",
@@ -9,8 +9,34 @@ const KANBAN_PLANNING_TOOL_NAMES = [
   "move_card",
 ] as const;
 
+const TEAM_COORDINATION_TOOL_NAMES = [
+  "create_task",
+  "list_agents",
+  "read_agent_conversation",
+  "set_agent_name",
+  "delegate_task",
+  "delegate_task_to_agent",
+  "send_message_to_agent",
+  "report_to_parent",
+  "create_note",
+  "read_note",
+  "list_notes",
+  "set_note_content",
+  "convert_task_blocks",
+  "update_card",
+  "move_card",
+  "request_previous_lane_handoff",
+  "submit_lane_handoff",
+  "request_artifact",
+  "provide_artifact",
+  "list_artifacts",
+  "get_artifact",
+  "list_pending_artifact_requests",
+  "capture_screenshot",
+] as const;
+
 export function resolveMcpServerProfile(value?: string): McpServerProfile | undefined {
-  if (value === "coordination" || value === "kanban-planning") {
+  if (value === "coordination" || value === "kanban-planning" || value === "team-coordination") {
     return value;
   }
   return undefined;
@@ -20,9 +46,16 @@ export function getMcpProfileToolAllowlist(profile?: McpServerProfile): Readonly
   if (profile === "kanban-planning") {
     return new Set(KANBAN_PLANNING_TOOL_NAMES);
   }
+  if (profile === "team-coordination") {
+    return new Set(TEAM_COORDINATION_TOOL_NAMES);
+  }
   return undefined;
 }
 
 export function getMcpServerName(profile?: McpServerProfile): string {
-  return profile === "kanban-planning" ? "kanban-planning-mcp" : "routa-mcp";
+  return profile === "kanban-planning"
+    ? "kanban-planning-mcp"
+    : profile === "team-coordination"
+      ? "team-coordination-mcp"
+      : "routa-mcp";
 }

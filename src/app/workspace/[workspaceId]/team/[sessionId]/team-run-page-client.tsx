@@ -25,6 +25,16 @@ interface SpecialistSummary {
   role?: string;
 }
 
+interface AgentSummary {
+  id: string;
+  name: string;
+  role: string;
+  status: string;
+  parentId?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
 type NormalizedTaskStatus = "not-started" | "in-progress" | "waiting-review" | "done" | "blocked";
 type TeamMemberStatus = "idle" | "working" | "blocked" | "reviewing" | "done";
 type CoordinationEventType = "plan" | "assign" | "revision" | "finding" | "complete" | "blocked";
@@ -73,12 +83,15 @@ interface SessionStreamSummary {
 }
 
 interface TeamMemberItem {
-  specialist: SpecialistSummary;
+  id: string;
   actor: string;
+  roleId?: string;
+  roleLabel: string;
   status: TeamMemberStatus;
   lastUpdatedLabel?: string;
   sessionId?: string;
   preview?: string;
+  avatarLabel: string;
 }
 
 interface DeliverableItem {
@@ -127,6 +140,29 @@ interface PendingSessionQuestion {
 }
 
 const TEAM_LEAD_SPECIALIST_ID = "team-agent-lead";
+
+function mapAgentStatus(status?: string): TeamMemberStatus {
+  switch ((status ?? "").toUpperCase()) {
+    case "ACTIVE":
+      return "working";
+    case "COMPLETED":
+      return "done";
+    case "ERROR":
+    case "CANCELLED":
+      return "blocked";
+    default:
+      return "idle";
+  }
+}
+
+function avatarInitials(label: string): string {
+  return label
+    .split(/\s+/)
+    .map((part) => part.charAt(0))
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
 
 function normalizeTaskStatus(status?: string): NormalizedTaskStatus {
   const normalized = status?.toUpperCase();
@@ -530,6 +566,7 @@ export function TeamRunPageClient() {
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [workspaceSessions, setWorkspaceSessions] = useState<SessionInfo[]>([]);
   const [specialists, setSpecialists] = useState<SpecialistSummary[]>([]);
+  const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [historiesBySessionId, setHistoriesBySessionId] = useState<Record<string, SessionHistoryEntry[]>>({});
   const [refreshKey, setRefreshKey] = useState(0);
   const [selectedSessionId, setSelectedSessionId] = useState<string>(sessionId);
@@ -638,23 +675,27 @@ export function TeamRunPageClient() {
 
     (async () => {
       try {
-        const [sessionRes, sessionsRes, specialistsRes] = await Promise.all([
+        const [sessionRes, sessionsRes, specialistsRes, agentsRes] = await Promise.all([
           desktopAwareFetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { cache: "no-store", signal: controller.signal }),
           desktopAwareFetch(`/api/sessions?workspaceId=${encodeURIComponent(workspaceId)}&limit=100`, { cache: "no-store", signal: controller.signal }),
           desktopAwareFetch("/api/specialists", { cache: "no-store", signal: controller.signal }),
+          desktopAwareFetch(`/api/agents?workspaceId=${encodeURIComponent(workspaceId)}`, { cache: "no-store", signal: controller.signal }),
         ]);
         const sessionData = await sessionRes.json().catch(() => ({}));
         const sessionsData = await sessionsRes.json().catch(() => ({}));
         const specialistsData = await specialistsRes.json().catch(() => ({}));
+        const agentsData = await agentsRes.json().catch(() => ({}));
         if (controller.signal.aborted) return;
         setSession((sessionData?.session ?? null) as SessionInfo | null);
         setWorkspaceSessions(Array.isArray(sessionsData?.sessions) ? sessionsData.sessions : []);
         setSpecialists(Array.isArray(specialistsData?.specialists) ? specialistsData.specialists : []);
+        setAgents(Array.isArray(agentsData?.agents) ? agentsData.agents : []);
       } catch {
         if (controller.signal.aborted) return;
         setSession(null);
         setWorkspaceSessions([]);
         setSpecialists([]);
+        setAgents([]);
       }
     })();
 
@@ -816,6 +857,41 @@ export function TeamRunPageClient() {
   );
   const objective = useMemo(() => findObjectiveText(session, rootHistory, notesHook.notes), [notesHook.notes, rootHistory, session]);
 
+  const createdAgents = useMemo(() => {
+    if (!session) return [] as Array<{ agent: AgentSummary; update: NonNullable<SessionHistoryEntry["update"]>; createdAt: number }>;
+
+    const candidateAgents = [...agents]
+      .filter((agent) => new Date(agent.createdAt).getTime() >= new Date(session.createdAt).getTime())
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    const matchedAgentIds = new Set<string>();
+
+    return rootHistory.flatMap((entry, index) => {
+      const update = entry.update;
+      const toolLabel = update ? getToolEventLabel(update as Record<string, unknown>) : "";
+      if (!update || update.sessionUpdate !== "tool_call_update" || !toolLabel.includes("create_agent") || update.status !== "completed") {
+        return [];
+      }
+
+      const requestedName = typeof update.rawInput?.name === "string" ? update.rawInput.name : undefined;
+      const requestedRole = typeof update.rawInput?.role === "string" ? update.rawInput.role : undefined;
+      if (!requestedName || !requestedRole) return [];
+
+      const matchedAgent = candidateAgents.find((agent) => (
+        !matchedAgentIds.has(agent.id)
+        && agent.name === requestedName
+        && agent.role === requestedRole
+      ));
+      if (!matchedAgent) return [];
+
+      matchedAgentIds.add(matchedAgent.id);
+      return [{
+        agent: matchedAgent,
+        update,
+        createdAt: new Date(session.createdAt).getTime() + index / 1000,
+      }];
+    });
+  }, [agents, rootHistory, session]);
+
   const coordinationItems = useMemo<TeamActivityItem[]>(() => {
     const items: Array<TeamActivityItem & { sortKey: number }> = [];
     const leadName = specialistsById.get(TEAM_LEAD_SPECIALIST_ID)?.name ?? "Agent Lead";
@@ -885,6 +961,23 @@ export function TeamRunPageClient() {
             linkedStream?.actor ?? target,
             targetRosterId ?? resolveRosterSpecialistId(linkedStream?.session ?? session),
           ),
+          sortKey,
+        });
+      }
+
+      if (updateType === "tool_call_update" && getToolEventLabel(update as Record<string, unknown>).includes("create_agent")) {
+        const target = typeof update.rawInput?.name === "string" ? update.rawInput.name : "teammate";
+        const targetRole = typeof update.rawInput?.role === "string" ? update.rawInput.role : undefined;
+        items.push({
+          id: `${sessionId}-create-agent-${index}`,
+          type: "assign",
+          title: `Created teammate ${target}`,
+          actor: leadName,
+          actorRoleId: TEAM_LEAD_SPECIALIST_ID,
+          target,
+          targetRoleId: targetRole,
+          timestamp: formatRelativeTime(session.createdAt),
+          summary: summarizeText(targetRole ? `${target} joined as ${targetRole}` : undefined),
           sortKey,
         });
       }
@@ -984,7 +1077,49 @@ export function TeamRunPageClient() {
     return map;
   }, [sessionStreams]);
 
+  const sessionStreamByAgentId = useMemo(() => {
+    const map = new Map<string, SessionStreamSummary>();
+    for (const stream of sessionStreams) {
+      if (!stream.session.routaAgentId) continue;
+      map.set(stream.session.routaAgentId, stream);
+    }
+    return map;
+  }, [sessionStreams]);
+
   const teamMembers = useMemo<TeamMemberItem[]>(() => {
+    const leadStream = sessionStreams.find((stream) => stream.session.sessionId === sessionId);
+    const leadItem: TeamMemberItem = {
+      id: TEAM_LEAD_SPECIALIST_ID,
+      actor: specialistsById.get(TEAM_LEAD_SPECIALIST_ID)?.name ?? "Agent Lead",
+      roleId: TEAM_LEAD_SPECIALIST_ID,
+      roleLabel: TEAM_LEAD_SPECIALIST_ID,
+      status: session?.acpStatus === "error" ? "blocked" : "working",
+      lastUpdatedLabel: leadStream?.lastUpdatedLabel ?? formatRelativeTime(session?.createdAt ?? new Date().toISOString()),
+      sessionId,
+      preview: leadStream?.preview,
+      avatarLabel: avatarInitials(specialistsById.get(TEAM_LEAD_SPECIALIST_ID)?.name ?? "Agent Lead"),
+    };
+
+    if (createdAgents.length > 0) {
+      return [
+        leadItem,
+        ...createdAgents.map(({ agent }) => {
+          const linkedStream = sessionStreamByAgentId.get(agent.id);
+          return {
+            id: agent.id,
+            actor: agent.name,
+            roleId: agent.role,
+            roleLabel: agent.role,
+            status: linkedStream ? mapAgentStatus(linkedStream.session.acpStatus === "error" ? "ERROR" : agent.status) : mapAgentStatus(agent.status),
+            lastUpdatedLabel: linkedStream?.lastUpdatedLabel ?? formatRelativeTime(agent.updatedAt ?? agent.createdAt),
+            sessionId: linkedStream?.session.sessionId,
+            preview: linkedStream?.preview ?? "Created and waiting for task dispatch",
+            avatarLabel: avatarInitials(agent.name),
+          } satisfies TeamMemberItem;
+        }),
+      ];
+    }
+
     const teamSpecialists = filterSpecialistsByCategory(specialists, "team")
       .sort((a, b) => {
         if (a.id === TEAM_LEAD_SPECIALIST_ID) return -1;
@@ -993,7 +1128,9 @@ export function TeamRunPageClient() {
       });
 
     return teamSpecialists.map((specialist) => {
-      const latest = latestSessionBySpecialistId.get(specialist.id);
+      const latest = specialist.id === TEAM_LEAD_SPECIALIST_ID
+        ? (sessionStreams.find((stream) => stream.session.sessionId === sessionId) ?? latestSessionBySpecialistId.get(specialist.id))
+        : latestSessionBySpecialistId.get(specialist.id);
       const latestHistory = latest ? historiesBySessionId[latest.session.sessionId] ?? [] : [];
       const latestCompletion = [...latestHistory].reverse().find((entry) => entry.update?.sessionUpdate === "task_completion");
       let status: TeamMemberStatus = "idle";
@@ -1011,15 +1148,18 @@ export function TeamRunPageClient() {
       }
 
       return {
-        specialist,
+        id: specialist.id,
         actor: specialist.name,
+        roleId: specialist.id,
+        roleLabel: specialist.id,
         status,
         lastUpdatedLabel: latest?.lastUpdatedLabel,
         sessionId: latest?.session.sessionId,
         preview: latest?.preview,
+        avatarLabel: avatarInitials(specialist.name),
       };
     });
-  }, [historiesBySessionId, latestSessionBySpecialistId, session, specialists]);
+  }, [createdAgents, historiesBySessionId, latestSessionBySpecialistId, session, sessionId, sessionStreams, sessionStreamByAgentId, specialists, specialistsById]);
 
   const memberCounts = useMemo(
     () => ({
@@ -1380,7 +1520,7 @@ export function TeamRunPageClient() {
                     const isSelected = member.sessionId === selectedSessionStream?.session.sessionId;
                     return (
                       <button
-                        key={member.specialist.id}
+                        key={member.id}
                         type="button"
                         onClick={() => member.sessionId && setSelectedSessionId(member.sessionId)}
                         disabled={!member.sessionId}
@@ -1392,13 +1532,8 @@ export function TeamRunPageClient() {
                               : "opacity-75"
                         }`}
                       >
-                        <div className={`relative mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${roleAvatarClass(member.specialist.id)}`}>
-                          {member.actor
-                            .split(" ")
-                            .map((part) => part.charAt(0))
-                            .join("")
-                            .slice(0, 2)
-                            .toUpperCase()}
+                        <div className={`relative mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${roleAvatarClass(member.roleId)}`}>
+                          {member.avatarLabel}
                           <span className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-white dark:border-[#141821] ${statusDotClass(member.status)}`} />
                         </div>
                         <div className="min-w-0 flex-1">
@@ -1407,7 +1542,7 @@ export function TeamRunPageClient() {
                             <span className="shrink-0 text-[10px] uppercase tracking-[0.12em] text-desktop-text-secondary">{member.status}</span>
                           </div>
                           <div className="mt-0.5 truncate text-[10px] text-desktop-text-secondary">
-                            {member.sessionId ? member.specialist.id : `${member.specialist.id} · no session yet`}
+                            {member.sessionId ? member.roleLabel : `${member.roleLabel} · no session yet`}
                           </div>
                           <div className="mt-0.5 flex items-center gap-1 text-[10px] text-desktop-text-muted">
                             <span>{member.lastUpdatedLabel ?? "Waiting for delegation"}</span>

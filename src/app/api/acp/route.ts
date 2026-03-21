@@ -347,9 +347,10 @@ export async function POST(request: NextRequest) {
         : p.toolMode === "essential"
           ? "essential"
           : undefined;
-      const mcpProfile = resolveMcpServerProfile(
+      const requestedMcpProfile = resolveMcpServerProfile(
         typeof p.mcpProfile === "string" ? p.mcpProfile : undefined,
       );
+      const mcpProfile = requestedMcpProfile ?? (specialistId === "team-agent-lead" ? "team-coordination" : undefined);
       const allowedNativeTools = deriveAllowedNativeTools(
         p.allowedNativeTools,
         specialistId,
