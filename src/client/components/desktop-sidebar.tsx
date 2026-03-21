@@ -65,8 +65,11 @@ export function DesktopSidebar({
       label: "Team",
       href: `/workspace/${workspaceId}/team`,
       icon: (
-        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a8.965 8.965 0 003.75-1.035 4.5 4.5 0 00-7.5-3.97m3.75 5.005a9.024 9.024 0 01-4.5 1.192A9.024 9.024 0 018.25 18.72m9.75 0a4.5 4.5 0 00-7.5-3.97m0 0a5.975 5.975 0 00-3 5.22m3-5.22a5.976 5.976 0 00-6 0m6 0a5.976 5.976 0 013 5.22m-9 0a8.965 8.965 0 01-3.75-1.035 4.5 4.5 0 017.5-3.97m-3.75 5.005a5.975 5.975 0 013-5.22m0 0a5.975 5.975 0 00-3-5.22m3 5.22a5.975 5.975 0 013-5.22m-6 0a5.975 5.975 0 00-3 5.22m3-5.22a5.975 5.975 0 00-3-5.22m6 0a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+          <circle cx="7.5" cy="8" r="2.25" />
+          <circle cx="16.5" cy="8" r="2.25" />
+          <circle cx="12" cy="16" r="2.25" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9.5 8h5M8.75 9.9l2 3.55m4.5-3.55-2 3.55" />
         </svg>
       ),
     },
