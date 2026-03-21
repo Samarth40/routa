@@ -1730,6 +1730,15 @@ export function TeamRunPageClient() {
         <header className="shrink-0 border-b border-desktop-border px-4 py-3" data-testid="team-run-page-header">
           <div className="mx-auto flex w-full max-w-[1760px] items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2">
+              <Link
+                href={`/workspace/${workspaceId}/team`}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-desktop-bg-secondary px-2.5 py-1.5 text-[11px] text-desktop-text-secondary transition-colors hover:bg-desktop-bg-active/70 hover:text-desktop-text-primary"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                </svg>
+                Team
+              </Link>
               <svg className="h-4 w-4 shrink-0 text-desktop-text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-2.844.813a1.125 1.125 0 0 0 0 2.124l2.844.813.813 2.844a1.125 1.125 0 0 0 2.124 0l.813-2.844 2.844-.813a1.125 1.125 0 0 0 0-2.124l-2.844-.813-.813-2.844a1.125 1.125 0 0 0-2.124 0ZM18.259 8.715 18 9.75l-1.035.259a.75.75 0 0 0 0 1.482L18 11.75l.259 1.035a.75.75 0 0 0 1.482 0L20 11.75l1.035-.259a.75.75 0 0 0 0-1.482L20 9.75l-.259-1.035a.75.75 0 0 0-1.482 0ZM16.894 20.567 16.5 22.125l-1.558.394a.562.562 0 0 0 0 1.081l1.558.394.394 1.558a.562.562 0 0 0 1.081 0l.394-1.558 1.558-.394a.562.562 0 0 0 0-1.081l-1.558-.394-.394-1.558a.562.562 0 0 0-1.081 0Z" />
               </svg>
